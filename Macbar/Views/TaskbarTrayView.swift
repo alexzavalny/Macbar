@@ -11,47 +11,92 @@ struct TaskbarTrayView: View {
     @State private var draggedItem: TrayItem?
     @State private var pendingOrder: [TrayItem]?
     @State private var buttons: [TrayItem: NSView] = [:]
+    @State private var drawerButton: NSView?
+    @State private var drawerContent: NSView?
+    @State private var drawerOpen = false
 
-    private var visibleItems: [TrayItem] {
+    private var availableItems: [TrayItem] {
         (pendingOrder ?? preferences.trayOrder).filter {
             ($0.control.map(preferences.shows) ?? true) && ($0 != .battery || battery.state != nil)
         }
     }
+    private var visibleItems: [TrayItem] { availableItems.filter { !preferences.isInDrawer($0) } }
+    private var drawerItems: [TrayItem] { availableItems.filter { preferences.isInDrawer($0) } }
 
     var body: some View {
         HStack(spacing: 2) {
-            ForEach(visibleItems) { item in
-                Group {
-                    if item == .inputLanguage {
-                        KeyboardInputMenu(keyboard: keyboard, willOpen: { controller.dismissPopup() },
-                                          dragActions: dragActions(for: item), register: { buttons[item] = $0 })
+            Button {
+                controller.dismissPopup()
+                drawerOpen.toggle()
+            } label: {
+                Image(systemName: "chevron.up").font(.system(size: 12, weight: .semibold))
+                    .frame(width: 28, height: 44)
+            }
+            .buttonStyle(TileButtonStyle(selected: drawerOpen))
+            .help("Hidden tray icons")
+            .accessibilityLabel("Hidden tray icons")
+            .background(TrayFrameAnchor { drawerButton = $0 })
+            .popover(isPresented: $drawerOpen, arrowEdge: .top) {
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("Hidden tray icons").font(.system(size: 12, weight: .semibold))
+                        .foregroundStyle(.secondary)
+                    if drawerItems.isEmpty {
+                        Text("Drag tray icons here to hide them.")
+                            .font(.system(size: 12)).foregroundStyle(.secondary)
+                            .frame(minWidth: 200, minHeight: 44, alignment: .leading)
                     } else {
-                        TrayButton(selected: controller.popup == popup(for: item),
-                                   accessibilityLabel: title(for: item),
-                                   accessibilityValue: item == .battery ? battery.state?.summary ?? "" : "",
-                                   help: help(for: item), dragActions: dragActions(for: item),
-                                   register: { buttons[item] = $0 }, action: { controller.toggle(popup(for: item)) }) {
-                            label(for: item)
+                        HStack(spacing: 2) {
+                            ForEach(drawerItems) { item in trayItem(item, inDrawer: true) }
                         }
                     }
                 }
-                .frame(width: width(for: item), height: 44)
-                .opacity(draggedItem == item ? 0 : 1)
+                .padding(12)
+                .background(TrayFrameAnchor { drawerContent = $0 })
             }
+            ForEach(visibleItems) { item in trayItem(item, inDrawer: false) }
         }
         .onDisappear { cancelDrag() }
+    }
+
+    private func trayItem(_ item: TrayItem, inDrawer: Bool) -> some View {
+        Group {
+            if item == .inputLanguage {
+                KeyboardInputMenu(keyboard: keyboard, willOpen: { controller.dismissPopup() },
+                                  dragActions: dragActions(for: item), register: { buttons[item] = $0 })
+            } else {
+                TrayButton(selected: controller.popup == popup(for: item),
+                           accessibilityLabel: title(for: item),
+                           accessibilityValue: item == .battery ? battery.state?.summary ?? "" : "",
+                           help: help(for: item), dragActions: dragActions(for: item),
+                           register: { buttons[item] = $0 }, action: {
+                    drawerOpen = false
+                    controller.toggle(popup(for: item))
+                }) { label(for: item) }
+            }
+        }
+        .frame(width: width(for: item), height: 44)
+        .opacity(draggedItem == item ? 0 : 1)
+        .contextMenu {
+            Button(inDrawer ? "Show on taskbar" : "Move to hidden icons") {
+                preferences.setInDrawer(!inDrawer, for: item)
+            }
+        }
+        .accessibilityAction(named: inDrawer ? "Show on taskbar" : "Move to hidden icons") {
+            preferences.setInDrawer(!inDrawer, for: item)
+        }
     }
 
     private func dragActions(for item: TrayItem) -> TrayDragActions {
         TrayDragActions(changed: { point, translation, frame in
             if draggedItem == nil {
                 controller.dismissPopup()
-                controller.beginTileDrag(frame: frame, translation: translation)
+                controller.beginTileDrag(frame: frame, translation: translation, sourceWindow: buttons[item]?.window)
                 pendingOrder = preferences.trayOrder
                 draggedItem = item
             }
             controller.updateTileDrag()
-            let frames = currentFrames().filter { $0.key != item }
+            // Reorder only within the same section; crossing sections is committed on drop.
+            let frames = currentFrames().filter { $0.key != item && preferences.isInDrawer($0.key) == preferences.isInDrawer(item) }
             guard let target = frames.min(by: { abs($0.value.midX - point.x) < abs($1.value.midX - point.x) }),
                   target.value.insetBy(dx: -2, dy: -12).contains(point) else { return }
             let order = TrayItem.moving(item, relativeTo: target.key, after: point.x >= target.value.midX,
@@ -60,19 +105,38 @@ struct TaskbarTrayView: View {
                 withAnimation(.easeInOut(duration: 0.16)) { pendingOrder = order }
             }
         }, ended: { point in
-            if currentFrames().values.contains(where: { $0.insetBy(dx: -3, dy: -12).contains(point) }),
-               let pendingOrder {
-                preferences.rememberTrayOrder(pendingOrder)
+            let frames = currentFrames()
+            let drawerFrame = screenFrame(drawerButton)
+            let contentFrame = drawerOpen ? screenFrame(drawerContent) : nil
+            let overChevron = drawerFrame?.insetBy(dx: -4, dy: -8).contains(point) ?? false
+            let overDrawer = (overChevron && !preferences.isInDrawer(item))
+                || (contentFrame?.insetBy(dx: -4, dy: -4).contains(point) ?? false)
+            let trayFrames = frames.filter { !preferences.isInDrawer($0.key) }
+            let overTray = trayFrames.values.contains { $0.insetBy(dx: -4, dy: -12).contains(point) }
+            if overDrawer {
+                preferences.setInDrawer(true, for: item)
+                if let pendingOrder { preferences.rememberTrayOrder(pendingOrder) }
+            } else if overTray || (overChevron && preferences.isInDrawer(item)) {
+                if preferences.isInDrawer(item),
+                   let target = trayFrames.min(by: { abs($0.value.midX - point.x) < abs($1.value.midX - point.x) }) {
+                    preferences.rememberTrayOrder(TrayItem.moving(item, relativeTo: target.key,
+                        after: point.x >= target.value.midX, in: pendingOrder ?? preferences.trayOrder))
+                } else if let pendingOrder { preferences.rememberTrayOrder(pendingOrder) }
+                preferences.setInDrawer(false, for: item)
             }
             cancelDrag()
         })
     }
 
+    private func screenFrame(_ view: NSView?) -> CGRect? {
+        guard let view, let window = view.window, window.isVisible else { return nil }
+        return window.convertToScreen(view.convert(view.bounds, to: nil))
+    }
+
     private func currentFrames() -> [TrayItem: CGRect] {
         var frames: [TrayItem: CGRect] = [:]
-        for item in visibleItems {
-            guard let button = buttons[item], let window = button.window else { continue }
-            frames[item] = window.convertToScreen(button.convert(button.bounds, to: nil))
+        for item in availableItems {
+            if let frame = screenFrame(buttons[item]) { frames[item] = frame }
         }
         return frames
     }
@@ -144,4 +208,14 @@ struct TaskbarTrayView: View {
         case .inputLanguage: EmptyView()
         }
     }
+}
+
+private struct TrayFrameAnchor: NSViewRepresentable {
+    let register: (NSView) -> Void
+    func makeNSView(context: Context) -> NSView {
+        let view = NSView()
+        DispatchQueue.main.async { register(view) }
+        return view
+    }
+    func updateNSView(_ view: NSView, context: Context) {}
 }

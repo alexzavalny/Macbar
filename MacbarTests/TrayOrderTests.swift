@@ -48,6 +48,34 @@ final class TrayOrderTests: XCTestCase {
     }
 
     @MainActor
+    func testDrawerPlacementPersistsAndDoesNotChangeControlVisibility() {
+        withPreferences { preferences, defaults in
+            let originalWidth = preferences.trayWidth
+            preferences.setInDrawer(true, for: .wifi)
+            preferences.setInDrawer(true, for: .settings)
+            XCTAssertEqual(preferences.trayWidth, originalWidth - 60)
+            XCTAssertTrue(preferences.shows(.wifi))
+            preferences.setVisible(false, for: .wifi)
+            let restored = Preferences(defaults: defaults)
+            XCTAssertTrue(restored.isInDrawer(.wifi))
+            XCTAssertTrue(restored.isInDrawer(.settings))
+            XCTAssertFalse(restored.shows(.wifi))
+            restored.setVisible(true, for: .wifi)
+            XCTAssertTrue(restored.isInDrawer(.wifi))
+            restored.setInDrawer(false, for: .wifi)
+            XCTAssertFalse(Preferences(defaults: defaults).isInDrawer(.wifi))
+        }
+    }
+
+    @MainActor
+    func testUnknownDrawerItemsAreIgnored() {
+        withPreferences { _, defaults in
+            defaults.set(["wifi", "future-control"], forKey: "trayDrawerItems")
+            XCTAssertEqual(Preferences(defaults: defaults).drawerItems, ["wifi"])
+        }
+    }
+
+    @MainActor
     private func withPreferences(_ body: (Preferences, UserDefaults) -> Void) {
         let suite = "TrayOrderTests.\(UUID().uuidString)"
         let defaults = UserDefaults(suiteName: suite)!

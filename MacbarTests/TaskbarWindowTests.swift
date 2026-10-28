@@ -136,6 +136,18 @@ final class TaskbarWindowTests: XCTestCase {
         XCTAssertEqual(TaskbarTile.make(apps: [app("editor")], windows: [], mode: .windows).map(\.title), ["editor"])
     }
 
+    func testClosedPinnedAppUsesIconWidthInWindowMode() {
+        let tiles = TaskbarTile.make(apps: [app("pinned"), app("editor"), app("browser")],
+                                     windows: [window("Document")], mode: .windows)
+        let titled = tiles.map { $0.showsTitle(mode: .windows, isRunning: $0.app.id != "pinned") }
+        XCTAssertEqual(titled, [false, true, true])
+        let layout = TaskbarStripLayout(screenWidth: 1440, alignment: .left,
+            preferredWidths: [120, 160, 120], mode: .windows, titledTiles: titled)
+        XCTAssertEqual(layout.tileWidths, [44, 160, 120])
+        XCTAssertFalse(tiles[0].showsTitle(mode: .icons, isRunning: false))
+        XCTAssertFalse(tiles[2].showsTitle(mode: .icons, isRunning: true))
+    }
+
     func testIconModeSeparatesOnlyAppsWithMultipleWindows() {
         let first = window("First", focused: true)
         let second = window("Second", minimized: true)
@@ -210,6 +222,29 @@ final class TaskbarWindowTests: XCTestCase {
         restored.rememberTaskbarOrder(["editor", "browser"])
         XCTAssertEqual(Preferences(defaults: defaults).orderedTaskbarApps([app("editor"), app("running"), app("browser")]).map(\.id),
                        ["editor", "running", "browser"])
+    }
+
+    func testMusicSpecialTileKeepsControlsTogetherAcrossWindowModesAndCrowding() {
+        let music = app("com.apple.Music")
+        let musicWindow = TaskbarWindow(id: UUID(), bundleID: music.id, processID: 1, title: "Music", isMinimized: false, isFocused: true)
+        let tiles = TaskbarTile.make(apps: [music, app("editor")], windows: [musicWindow, window("Document")], mode: .windows)
+        XCTAssertEqual(tiles.count, 2)
+        XCTAssertEqual(tiles[0].special, .appleMusic)
+        XCTAssertNil(tiles[0].window)
+        XCTAssertFalse(tiles[0].showsTitle(mode: .windows, isRunning: true))
+
+        for width: CGFloat in [640, 800, 1440] {
+            let layout = TaskbarStripLayout(screenWidth: width, alignment: .left,
+                preferredWidths: [122] + Array(repeating: 180, count: 12), mode: .windows,
+                titledTiles: [false] + Array(repeating: true, count: 12),
+                iconWidths: [122] + Array(repeating: 44, count: 12),
+                memberPreferredWidths: [[122]] + Array(repeating: [180], count: 12),
+                memberTitledTiles: [[false]] + Array(repeating: [true], count: 12),
+                memberIconWidths: [[122]] + Array(repeating: [44], count: 12))
+            if layout.capacity > 0 { XCTAssertEqual(layout.memberWidths[0], [122]) }
+            let overflow: CGFloat = layout.capacity < 13 ? (layout.capacity > 0 ? 38 : 34) : 0
+            XCTAssertLessThanOrEqual(layout.tilesWidth + layout.headerWidth + overflow, layout.availableWidth + 0.01)
+        }
     }
 
     func testTileLayoutReservesOverflowAndAvoidsTray() {

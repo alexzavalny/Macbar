@@ -56,12 +56,14 @@ final class Preferences: ObservableObject {
     @Published var taskbarMode: TaskbarMode { didSet { defaults.set(taskbarMode.rawValue, forKey: "taskbarMode") } }
     @Published var separateMultipleWindows: Bool { didSet { defaults.set(separateMultipleWindows, forKey: "separateMultipleWindows") } }
     var usesWindowTiles: Bool { taskbarMode == .windows || separateMultipleWindows }
+    @Published var hideDockWhileRunning: Bool { didSet { defaults.set(hideDockWhileRunning, forKey: "hideDockWhileRunning") } }
     @Published var compact: Bool { didSet { defaults.set(compact, forKey: "compact") } }
     @Published var showAppLabels: Bool { didSet { defaults.set(showAppLabels, forKey: "showAppLabels") } }
     @Published var keepWindowsAboveTaskbar: Bool { didSet { defaults.set(keepWindowsAboveTaskbar, forKey: "keepWindowsAboveTaskbar") } }
     @Published var pinnedIDs: [String] { didSet { defaults.set(pinnedIDs, forKey: "pinnedIDs") } }
     @Published private(set) var taskbarAppOrder: [String] { didSet { defaults.set(taskbarAppOrder, forKey: "taskbarAppOrder") } }
     @Published private(set) var trayOrder: [TrayItem] { didSet { defaults.set(trayOrder.map(\.rawValue), forKey: "trayOrder") } }
+    @Published private(set) var drawerItems: Set<String> { didSet { defaults.set(drawerItems.sorted(), forKey: "trayDrawerItems") } }
     @Published private(set) var hiddenControls: Set<String> { didSet { defaults.set(hiddenControls.sorted(), forKey: "hiddenTaskbarControls") } }
 
     // Keep the icons unchanged, with roughly half the original surrounding space.
@@ -73,12 +75,14 @@ final class Preferences: ObservableObject {
         alignment = TaskbarAlignment(rawValue: defaults.string(forKey: "alignment") ?? "center") ?? .center
         taskbarMode = TaskbarMode(rawValue: defaults.string(forKey: "taskbarMode") ?? "icons") ?? .icons
         separateMultipleWindows = defaults.bool(forKey: "separateMultipleWindows")
+        hideDockWhileRunning = defaults.bool(forKey: "hideDockWhileRunning")
         compact = defaults.bool(forKey: "compact")
         showAppLabels = defaults.bool(forKey: "showAppLabels")
         keepWindowsAboveTaskbar = defaults.object(forKey: "keepWindowsAboveTaskbar") as? Bool ?? true
         pinnedIDs = defaults.stringArray(forKey: "pinnedIDs") ?? Self.defaultPins
         taskbarAppOrder = defaults.stringArray(forKey: "taskbarAppOrder") ?? []
         trayOrder = TrayItem.normalized(defaults.stringArray(forKey: "trayOrder") ?? [])
+        drawerItems = Set((defaults.stringArray(forKey: "trayDrawerItems") ?? []).compactMap { TrayItem(rawValue: $0)?.rawValue })
         hiddenControls = Set(defaults.stringArray(forKey: "hiddenTaskbarControls") ?? [])
     }
 
@@ -87,6 +91,13 @@ final class Preferences: ObservableObject {
     func rememberTrayOrder(_ items: [TrayItem]) {
         let normalized = TrayItem.normalized(items.map(\.rawValue))
         if trayOrder != normalized { trayOrder = normalized }
+    }
+
+    func isInDrawer(_ item: TrayItem) -> Bool { drawerItems.contains(item.rawValue) }
+
+    func setInDrawer(_ inDrawer: Bool, for item: TrayItem) {
+        if inDrawer { drawerItems.insert(item.rawValue) }
+        else { drawerItems.remove(item.rawValue) }
     }
 
     func setVisible(_ visible: Bool, for control: TaskbarControl) {
@@ -100,8 +111,9 @@ final class Preferences: ObservableObject {
 
     func trayWidth(hasBattery: Bool) -> CGFloat {
         let widths: [(TaskbarControl, CGFloat)] = [(.inputLanguage, 38), (.wifi, 28), (.sound, 28), (.clock, 88), (.aiLimits, 56)]
-        let visible = widths.filter { shows($0.0) }
-        return 28 + visible.reduce(0) { $0 + $1.1 + 2 } + (hasBattery && shows(.battery) ? 34 : 0)
+        let visible = widths.filter { shows($0.0) && !drawerItems.contains($0.0.rawValue) }
+        let settingsWidth: CGFloat = isInDrawer(.settings) ? 0 : 30
+        return 28 + settingsWidth + visible.reduce(0) { $0 + $1.1 + 2 } + (hasBattery && shows(.battery) && !isInDrawer(.battery) ? 34 : 0)
     }
 
     func togglePin(_ id: String) {

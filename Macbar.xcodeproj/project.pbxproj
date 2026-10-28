@@ -8,6 +8,7 @@
 
 /* Begin PBXBuildFile section */
 		0B446A89CC3B242A8788CFD7 /* BatteryTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 082E70137614DEA1A695470C /* BatteryTests.swift */; };
+		21DA502F86B1D24818CF2D54 /* AppleMusicStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = D02835ADA2CBE91B6BCEF82D /* AppleMusicStore.swift */; };
 		296CD13B310C818912B642F2 /* AILimitsTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 14E1256A681E0A3F71944955 /* AILimitsTests.swift */; };
 		3B7C22D55628371EC29C2043 /* TrayControlTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C8E6298995E1E6C8A70E9B48 /* TrayControlTests.swift */; };
 		3FC1CEE225BACB07BF139432 /* VolumeFlyout.swift in Sources */ = {isa = PBXBuildFile; fileRef = 657A5679D9116FBE81D823F9 /* VolumeFlyout.swift */; };
@@ -16,6 +17,7 @@
 		468A4291E776DFDDE647DA34 /* AudioStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = A34E5C60322AAEAFC5F85AED /* AudioStore.swift */; };
 		5BC6E384675BAE00960A3104 /* TrayOrderTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0A6847AD79470623E3318725 /* TrayOrderTests.swift */; };
 		5D2E4CA1D9F7727EED1E5CC6 /* WindowGroupStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9E1877E122E45900263CC892 /* WindowGroupStore.swift */; };
+		6103B890F1C6BD354E708230 /* DockVisibilityTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 27E13BA463037E3A31BF19E5 /* DockVisibilityTests.swift */; };
 		62B9CD8F6DDFC6DEED070D7C /* AILimitsFlyout.swift in Sources */ = {isa = PBXBuildFile; fileRef = A46E366AC2F05811075AE89E /* AILimitsFlyout.swift */; };
 		6B7363B89F7D8473B4A557D5 /* BatteryStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 963516FFA4536C61232E2E2E /* BatteryStore.swift */; };
 		6D5D187EC4DAF51D1D04121E /* Preferences.swift in Sources */ = {isa = PBXBuildFile; fileRef = F27DACE55242926954B430A5 /* Preferences.swift */; };
@@ -36,6 +38,7 @@
 		B21C0FE43BD0C002DE979F94 /* AILimitsStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0B48286CE9A65478BD55B34E /* AILimitsStore.swift */; };
 		C1B56E46EE3A3B0887FDAFDB /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = D895A9D0A619B90A7A654564 /* Assets.xcassets */; };
 		C55B84AC3763238F853058FC /* TaskbarTrayView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 501E28F6554EF4D57DDC1AE2 /* TaskbarTrayView.swift */; };
+		CB76CAC3A4BF6A8595F69602 /* DockVisibilityController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 58545F0AC210B622EE478EF4 /* DockVisibilityController.swift */; };
 		D929BEDBB827D50B6E3BB38C /* AppIcon.icns in Resources */ = {isa = PBXBuildFile; fileRef = D69940B6D4AC4A779049CF1B /* AppIcon.icns */; };
 		DD9F1DC65307CCBBDC877E66 /* AIIconCredits.txt in Resources */ = {isa = PBXBuildFile; fileRef = 3BDDC8E49C96978C20203C90 /* AIIconCredits.txt */; };
 		E4E15C808D0A9D7C76D27D95 /* FullScreenDetectionTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F4D97483519047A836C645E0 /* FullScreenDetectionTests.swift */; };
@@ -75,6 +78,7 @@
 		1F9C3DA9FD8929DC8AE6BA84 /* ApplicationItem.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ApplicationItem.swift; sourceTree = "<group>"; };
 		20A7D2AD7679BF463E5B12FD /* SettingsFlyout.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsFlyout.swift; sourceTree = "<group>"; };
 		2193606991CCB95170B074DC /* LauncherView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LauncherView.swift; sourceTree = "<group>"; };
+		27E13BA463037E3A31BF19E5 /* DockVisibilityTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DockVisibilityTests.swift; sourceTree = "<group>"; };
 		2B00AB30713FF60EF8F28FED /* WiFiStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WiFiStore.swift; sourceTree = "<group>"; };
 		2C98691BB2DD3700069D0E64 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
 		2D2F3FA66709E314B15CC4F9 /* TrayItem.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TrayItem.swift; sourceTree = "<group>"; };
@@ -83,6 +87,7 @@
 		4723D324CFE60456541BEFF7 /* TrayButton.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TrayButton.swift; sourceTree = "<group>"; };
 		501E28F6554EF4D57DDC1AE2 /* TaskbarTrayView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TaskbarTrayView.swift; sourceTree = "<group>"; };
 		57AE2445889703500AD1BEEB /* KeyboardInputMenu.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeyboardInputMenu.swift; sourceTree = "<group>"; };
+		58545F0AC210B622EE478EF4 /* DockVisibilityController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DockVisibilityController.swift; sourceTree = "<group>"; };
 		5C2439020AA22496AA92326B /* BatteryFlyout.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BatteryFlyout.swift; sourceTree = "<group>"; };
 		5E40CBDC008F6D45431EAE68 /* TaskbarView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TaskbarView.swift; sourceTree = "<group>"; };
 		608F90E89C9770CCC8675F7F /* WindowFitTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WindowFitTests.swift; sourceTree = "<group>"; };
@@ -100,9 +105,11 @@
 		A34E5C60322AAEAFC5F85AED /* AudioStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AudioStore.swift; sourceTree = "<group>"; };
 		A46E366AC2F05811075AE89E /* AILimitsFlyout.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AILimitsFlyout.swift; sourceTree = "<group>"; };
 		AC7BEEB8FDB5ABDBD38194EF /* WiFiFlyout.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WiFiFlyout.swift; sourceTree = "<group>"; };
+		B25EDC0E609AAF5631C0C589 /* Macbar.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = Macbar.entitlements; sourceTree = "<group>"; };
 		BE3A2A2ADBC2AA4BEECAEC7E /* MacbarTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacbarTests.swift; sourceTree = "<group>"; };
 		BF4263B7004CF7E4F0E72A5F /* MacbarApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacbarApp.swift; sourceTree = "<group>"; };
 		C8E6298995E1E6C8A70E9B48 /* TrayControlTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TrayControlTests.swift; sourceTree = "<group>"; };
+		D02835ADA2CBE91B6BCEF82D /* AppleMusicStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppleMusicStore.swift; sourceTree = "<group>"; };
 		D340CD625DC62847F6101DE8 /* KeyboardInputStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeyboardInputStore.swift; sourceTree = "<group>"; };
 		D69940B6D4AC4A779049CF1B /* AppIcon.icns */ = {isa = PBXFileReference; lastKnownFileType = image.icns; path = AppIcon.icns; sourceTree = "<group>"; };
 		D895A9D0A619B90A7A654564 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
@@ -119,6 +126,7 @@
 			children = (
 				14E1256A681E0A3F71944955 /* AILimitsTests.swift */,
 				082E70137614DEA1A695470C /* BatteryTests.swift */,
+				27E13BA463037E3A31BF19E5 /* DockVisibilityTests.swift */,
 				F4D97483519047A836C645E0 /* FullScreenDetectionTests.swift */,
 				BE3A2A2ADBC2AA4BEECAEC7E /* MacbarTests.swift */,
 				68FA11B1A7C8A0402A3ECED8 /* TaskbarWindowTests.swift */,
@@ -135,9 +143,11 @@
 			isa = PBXGroup;
 			children = (
 				0B48286CE9A65478BD55B34E /* AILimitsStore.swift */,
+				D02835ADA2CBE91B6BCEF82D /* AppleMusicStore.swift */,
 				F47F8E639335858D50675AEF /* ApplicationStore.swift */,
 				A34E5C60322AAEAFC5F85AED /* AudioStore.swift */,
 				963516FFA4536C61232E2E2E /* BatteryStore.swift */,
+				58545F0AC210B622EE478EF4 /* DockVisibilityController.swift */,
 				82EA628CC982C5C0F9F64C03 /* FullScreenDetection.swift */,
 				D340CD625DC62847F6101DE8 /* KeyboardInputStore.swift */,
 				6A135A935C9DFD1D66DC6BD0 /* TaskbarController.swift */,
@@ -195,6 +205,7 @@
 			isa = PBXGroup;
 			children = (
 				2C98691BB2DD3700069D0E64 /* Info.plist */,
+				B25EDC0E609AAF5631C0C589 /* Macbar.entitlements */,
 				BF4263B7004CF7E4F0E72A5F /* MacbarApp.swift */,
 				C79972AC1806BDF29F7E8279 /* Models */,
 				E96DA0CCFA63D4785FF16AC4 /* Resources */,
@@ -321,6 +332,7 @@
 			files = (
 				296CD13B310C818912B642F2 /* AILimitsTests.swift in Sources */,
 				0B446A89CC3B242A8788CFD7 /* BatteryTests.swift in Sources */,
+				6103B890F1C6BD354E708230 /* DockVisibilityTests.swift in Sources */,
 				E4E15C808D0A9D7C76D27D95 /* FullScreenDetectionTests.swift in Sources */,
 				AC6E97DA425227A6A1C31343 /* MacbarTests.swift in Sources */,
 				8751E70800C53F79A00239DB /* TaskbarWindowTests.swift in Sources */,
@@ -338,6 +350,7 @@
 			files = (
 				62B9CD8F6DDFC6DEED070D7C /* AILimitsFlyout.swift in Sources */,
 				B21C0FE43BD0C002DE979F94 /* AILimitsStore.swift in Sources */,
+				21DA502F86B1D24818CF2D54 /* AppleMusicStore.swift in Sources */,
 				82AD4FDC069347C1088A5A54 /* ApplicationItem.swift in Sources */,
 				F5604201D0A560D869321E7F /* ApplicationStore.swift in Sources */,
 				468A4291E776DFDDE647DA34 /* AudioStore.swift in Sources */,
@@ -345,6 +358,7 @@
 				6B7363B89F7D8473B4A557D5 /* BatteryStore.swift in Sources */,
 				F2FBF20C389F980E847D65E3 /* CalendarFlyout.swift in Sources */,
 				F1B610A966228F9363BCD563 /* Components.swift in Sources */,
+				CB76CAC3A4BF6A8595F69602 /* DockVisibilityController.swift in Sources */,
 				8EB9CD400B548E645D5FF8AA /* FullScreenDetection.swift in Sources */,
 				8494B0E899BA458BCB024793 /* KeyboardInputMenu.swift in Sources */,
 				83B79B991ADC9AE65B1E73B8 /* KeyboardInputStore.swift in Sources */,
@@ -385,6 +399,7 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_ENTITLEMENTS = Macbar/Macbar.entitlements;
 				COMBINE_HIDPI_IMAGES = YES;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = Macbar/Info.plist;
@@ -500,6 +515,7 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_ENTITLEMENTS = Macbar/Macbar.entitlements;
 				COMBINE_HIDPI_IMAGES = YES;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = Macbar/Info.plist;

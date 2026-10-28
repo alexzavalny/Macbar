@@ -11,6 +11,7 @@ struct TaskbarView: View {
     @ObservedObject var aiLimits: AILimitsStore
     @ObservedObject var windowTiles: TaskbarWindowStore
     @ObservedObject var windowGroups: WindowGroupStore
+    @ObservedObject var music: AppleMusicStore
     @Environment(\.colorScheme) private var colorScheme
     @State private var windowTileOrder = TaskbarTileOrder()
     @State private var draggedTileID: String?
@@ -30,8 +31,14 @@ struct TaskbarView: View {
                                            preferredWidths: items.map { item in
                 (item.title as NSString).size(withAttributes: [.font: NSFont.systemFont(ofSize: 12)]).width + 61
             }, mode: preferences.taskbarMode,
-                titledTiles: items.map { !$0.isGroup && (preferences.taskbarMode == .windows || $0.tiles[0].window != nil) },
-                iconWidths: items.map { $0.isGroup ? 88 : 44 }, trayWidth: sideWidth,
+                titledTiles: items.map { !$0.isGroup && $0.tiles[0].showsTitle(mode: preferences.taskbarMode, isRunning: applications.isRunning($0.tiles[0].app.id)) },
+                iconWidths: items.map { $0.tiles.reduce(CGFloat(0)) { $0 + ($1.special?.width ?? 44) } },
+                memberPreferredWidths: items.map { item in item.tiles.map { tile in
+                    (tile.title as NSString).size(withAttributes: [.font: NSFont.systemFont(ofSize: 12)]).width + 61
+                } },
+                memberTitledTiles: items.map { item in item.tiles.map { tile in
+                    tile.showsTitle(mode: preferences.taskbarMode, isRunning: applications.isRunning(tile.app.id))
+                } }, memberIconWidths: items.map { $0.tiles.map { $0.special?.width ?? 44 } }, trayWidth: sideWidth,
                 showSearch: preferences.shows(.search), showMissionControl: preferences.shows(.missionControl))
             ZStack {
                 GlassBackground(material: .hudWindow)
@@ -77,10 +84,10 @@ struct TaskbarView: View {
                     ForEach(Array(items.prefix(layout.capacity).enumerated()), id: \.element.id) { index, item in
                         let groupActive = item.isGroup && item.isActive(activeID: applications.activeID)
                         HStack(spacing: 0) {
-                            ForEach(item.tiles) { tile in
-                                TaskbarAppButton(tile: tile, width: item.isGroup ? 44 : layout.tileWidths[index],
+                            ForEach(Array(item.tiles.enumerated()), id: \.element.id) { memberIndex, tile in
+                                TaskbarAppButton(tile: tile, width: tile.special == nil ? layout.memberWidths[index][memberIndex] : 44,
                                                  applications: applications, preferences: preferences,
-                                                 isDragging: draggedTileID == item.id, grouped: item.isGroup, groupActive: groupActive,
+                                                 grouped: item.isGroup, groupActive: groupActive,
                                                  ungroup: { if let group = windowGroups.group(for: tile) { windowGroups.ungroup(group) } },
                                                  canMoveLeft: index > 0, canMoveRight: index < items.count - 1,
                                                  hover: { inside, frame in controller.hoverApplication(tile.app, inside: inside, frame: frame) },
@@ -88,10 +95,9 @@ struct TaskbarView: View {
                                                      if draggedTileID == nil {
                                                          guard let frame else { return }
                                                          controller.dismissPopup()
-                                                         let dragFrame = item.isGroup
-                                                             ? CGRect(x: frame.minX - (tile.id == item.tiles[0].id ? 0 : 44),
-                                                                      y: frame.minY, width: 88, height: frame.height)
-                                                             : frame
+                                                         // The icon is the drag handle, but the whole strip item moves together.
+                                                         let dragFrame = CGRect(x: frame.minX - layout.memberWidths[index].prefix(memberIndex).reduce(0, +),
+                                                                                y: frame.minY, width: layout.tileWidths[index], height: frame.height)
                                                          controller.beginTileDrag(frame: dragFrame, translation: translation)
                                                          var order = TaskbarTileOrder()
                                                          order.remember(tiles)
@@ -116,10 +122,13 @@ struct TaskbarView: View {
                                                  },
                                                  moveBy: { offset in move(item.id, relativeTo: items[index + offset].id, after: offset > 0, items: items) },
                                                  action: { controller.activate(tile) })
+                                if tile.special == .appleMusic {
+                                    MusicTileControls(music: music, running: applications.isRunning(tile.app.id))
+                                }
                             }
                         }
                         .background {
-                            if item.isGroup {
+                            if item.isGroup || item.tiles.first?.special != nil {
                                 RoundedRectangle(cornerRadius: 10, style: .continuous)
                                     .fill(.primary.opacity(groupActive ? (colorScheme == .dark ? 0.17 : 0.12) : (colorScheme == .dark ? 0.10 : 0.07)))
                                     .overlay {
@@ -129,19 +138,24 @@ struct TaskbarView: View {
                                     .padding(.vertical, 3)
                             }
                         }
-                        .overlay {
+                        .overlay(alignment: .leading) {
                             if item.isGroup {
                                 Rectangle().fill(.primary.opacity(0.15)).frame(width: 1, height: 22)
+                                    .offset(x: layout.memberWidths[index][0] - 0.5)
                                     .allowsHitTesting(false)
                             }
                         }
                         .overlay(alignment: .bottom) {
-                            if groupActive {
+                            if groupActive && !item.tiles.enumerated().contains(where: { memberIndex, tile in
+                                tile.showsTitle(mode: preferences.taskbarMode, isRunning: applications.isRunning(tile.app.id)) &&
+                                    layout.memberWidths[index][memberIndex] >= 64
+                            }) {
                                 Capsule().fill(Color.accentColor).frame(width: 22, height: 3)
                                     .padding(.bottom, 3).allowsHitTesting(false)
                             }
                         }
                         .animation(.easeOut(duration: 0.16), value: groupActive)
+                        .opacity(draggedTileID == item.id ? 0 : 1)
                         .background {
                             GeometryReader { proxy in
                                 Color.clear.preference(key: TaskbarTileFramesKey.self,
@@ -154,16 +168,17 @@ struct TaskbarView: View {
                             ForEach(Array(items.dropFirst(layout.capacity))) { item in
                                 ForEach(item.tiles) { tile in
                                     Button { controller.activate(tile) } label: { Label { Text(tile.title) } icon: { Image(nsImage: tile.app.icon) } }
+                                    if tile.special == .appleMusic {
+                                        Button("Previous track") { music.perform(.previous) }.disabled(!applications.isRunning(tile.app.id))
+                                        Button(music.playbackTitle) { music.perform(.playPause) }.disabled(!applications.isRunning(tile.app.id))
+                                        Button("Next track") { music.perform(.next) }.disabled(!applications.isRunning(tile.app.id))
+                                    }
                                 }
                             }
                             Divider()
                             Menu("Arrange tiles") {
                                 ForEach(Array(items.enumerated()), id: \.element.id) { index, item in
                                     Menu(item.title) {
-                                        Button("Move Left") { move(item.id, relativeTo: items[index - 1].id, after: false, items: items) }
-                                            .disabled(index == 0)
-                                        Button("Move Right") { move(item.id, relativeTo: items[index + 1].id, after: true, items: items) }
-                                            .disabled(index == items.count - 1)
                                         Button("Move to Start") { if let first = items.first { move(item.id, relativeTo: first.id, after: false, items: items) } }
                                             .disabled(index == 0)
                                     }
@@ -204,6 +219,9 @@ struct TaskbarView: View {
                 }
             }
         }
+        .alert("Unable to control Music", isPresented: Binding(get: { music.error != nil }, set: { if !$0 { music.error = nil } })) {
+            Button("OK") { music.error = nil }
+        } message: { Text(music.error ?? "") }
         .alert("Unable to arrange windows", isPresented: Binding(get: { windowGroups.error != nil }, set: { if !$0 { windowGroups.error = nil } })) {
             Button("OK") { windowGroups.error = nil }
         } message: { Text(windowGroups.error ?? "") }
@@ -257,7 +275,6 @@ private struct TaskbarAppButton: View {
     let width: CGFloat
     @ObservedObject var applications: ApplicationStore
     @ObservedObject var preferences: Preferences
-    let isDragging: Bool
     let grouped: Bool
     let groupActive: Bool
     let ungroup: () -> Void
@@ -268,12 +285,13 @@ private struct TaskbarAppButton: View {
     let dragEnded: (CGPoint) -> Void
     let moveBy: (Int) -> Void
     let action: () -> Void
+    @Environment(\.colorScheme) private var colorScheme
     @State private var hovered = false
     @State private var anchorView: NSView?
     @State private var suppressClick = false
 
     private var item: ApplicationItem { tile.app }
-    private var showsTitle: Bool { !grouped && (preferences.taskbarMode == .windows || tile.window != nil) && width >= 64 }
+    private var showsTitle: Bool { tile.showsTitle(mode: preferences.taskbarMode, isRunning: applications.isRunning(item.id)) && width >= 64 }
     private var compressed: Bool { width < 88 }
     private var active: Bool {
         applications.activeID == item.id && (tile.window?.isFocused ?? true)
@@ -294,31 +312,37 @@ private struct TaskbarAppButton: View {
                     .padding(.horizontal, compressed ? 8 : 10)
                     .frame(width: width, height: preferences.compact ? 42 : 50)
                     .background(.primary.opacity(0.035), in: RoundedRectangle(cornerRadius: 7))
-                    .overlay(alignment: .bottomLeading) {
-                        indicator.padding(.leading, 12).padding(.bottom, 2)
-                    }
                 } else {
                     VStack(spacing: 1) {
                         Image(nsImage: item.icon).resizable().interpolation(.high)
                             .frame(width: grouped ? 28 : preferences.compact ? 30 : 34, height: grouped ? 28 : preferences.compact ? 30 : 34)
-                            .offset(y: hovered ? -1 : 0)
                         if !grouped && preferences.taskbarMode == .icons && preferences.showAppLabels {
                             Text(item.name).font(.system(size: 8)).lineLimit(1).frame(width: 44)
                         }
-                        indicator
                     }
                     .frame(width: 44, height: preferences.compact ? 42 : 50)
+                    .overlay(alignment: .bottom) {
+                        indicator.padding(.bottom, 2)
+                    }
                 }
             }
         }
         .buttonStyle(TileButtonStyle(selected: active && !grouped, showsBackground: !grouped))
-        .onHover { inside in
-            hovered = inside
-            if tile.window == nil, let anchorView, let window = anchorView.window {
-                hover(inside, window.convertToScreen(anchorView.convert(anchorView.bounds, to: nil)))
-            }
+        .overlay {
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .fill((colorScheme == .dark ? Color.white : Color.black).opacity(hovered ? (colorScheme == .dark ? 0.10 : 0.055) : 0))
+                .overlay {
+                    RoundedRectangle(cornerRadius: 8, style: .continuous)
+                        .strokeBorder((colorScheme == .dark ? Color.white : Color.black).opacity(hovered ? (colorScheme == .dark ? 0.24 : 0.12) : 0), lineWidth: 1)
+                }
+                .shadow(color: (colorScheme == .dark ? Color.white : Color.black).opacity(hovered ? (colorScheme == .dark ? 0.12 : 0.08) : 0), radius: 5)
+                .padding(2)
+                .allowsHitTesting(false)
         }
-        .background(AppIconHoverAnchor { anchorView = $0 })
+        .background(AppIconHoverAnchor(resolved: { anchorView = $0 }, hoverChanged: { inside, frame in
+            hovered = inside
+            if tile.window == nil { hover(inside, frame) }
+        }))
         .highPriorityGesture(DragGesture(minimumDistance: 5, coordinateSpace: .named("taskbarTiles"))
             .onChanged { value in
                 suppressClick = true
@@ -332,7 +356,6 @@ private struct TaskbarAppButton: View {
                 // Do not turn the mouse-up that completed a drag into app activation.
                 DispatchQueue.main.async { suppressClick = false }
             })
-        .opacity(isDragging ? 0 : 1)
         .animation(.easeOut(duration: 0.14), value: hovered)
         .animation(.easeOut(duration: 0.16), value: active)
         .help(tile.window == nil ? item.name : "\(tile.title) · \(item.name)")
@@ -341,9 +364,6 @@ private struct TaskbarAppButton: View {
         .contextMenu {
             if grouped { Button("Ungroup windows", action: ungroup); Divider() }
             ApplicationContextMenu(item: item, applications: applications, preferences: preferences, open: action)
-            Divider()
-            Button("Move Left") { moveBy(-1) }.disabled(!canMoveLeft)
-            Button("Move Right") { moveBy(1) }.disabled(!canMoveRight)
         }
         .accessibilityAction(named: "Move Left") { if canMoveLeft { moveBy(-1) } }
         .accessibilityAction(named: "Move Right") { if canMoveRight { moveBy(1) } }
@@ -365,5 +385,31 @@ private struct TaskbarTileFramesKey: PreferenceKey {
     static var defaultValue: [String: CGRect] = [:]
     static func reduce(value: inout [String: CGRect], nextValue: () -> [String: CGRect]) {
         value.merge(nextValue(), uniquingKeysWith: { _, new in new })
+    }
+}
+
+private struct MusicTileControls: View {
+    @ObservedObject var music: AppleMusicStore
+    let running: Bool
+
+    var body: some View {
+        HStack(spacing: 0) {
+            control("backward.end.fill", label: "Previous track", command: .previous)
+            control(music.playbackSymbol, label: music.playbackTitle, command: .playPause)
+            control("forward.end.fill", label: "Next track", command: .next)
+        }
+        .frame(width: 78)
+        .disabled(!running)
+    }
+
+    private func control(_ symbol: String, label: String, command: AppleMusicStore.Command) -> some View {
+        Button { music.perform(command) } label: {
+            Image(systemName: symbol).font(.system(size: 11, weight: .semibold))
+                .frame(width: 26, height: 38)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(TileButtonStyle())
+        .help(label)
+        .accessibilityLabel(label)
     }
 }

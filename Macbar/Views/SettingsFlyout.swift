@@ -77,7 +77,9 @@ struct SettingsFlyout: View {
                 Divider().opacity(0.5)
                 VStack(alignment: .leading, spacing: 9) {
                     Label("Settle in", systemImage: "dock.rectangle").font(.system(size: 12, weight: .semibold))
-                    Text("For the cleanest desktop, turn on “Automatically hide and show the Dock” in macOS settings.")
+                    Toggle("Hide Dock while Macbar is running", isOn: $preferences.hideDockWhileRunning)
+                        .toggleStyle(.switch).controlSize(.small).font(.system(size: 12))
+                    Text("Your previous Dock settings return when Macbar quits.")
                         .font(.system(size: 11)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
                     Button("Open Desktop & Dock Settings ↗") {
                         NSWorkspace.shared.open(URL(string: "x-apple.systempreferences:com.apple.Desktop-Settings.extension")!)

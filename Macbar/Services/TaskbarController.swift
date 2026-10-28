@@ -9,6 +9,26 @@ final class BarPanel: NSPanel {
     override var canBecomeMain: Bool { false }
 }
 
+final class TaskbarHostingView<Content: View>: NSHostingView<Content> {
+    private var cursorTracking: NSTrackingArea?
+
+    override func updateTrackingAreas() {
+        super.updateTrackingAreas()
+        if let cursorTracking { removeTrackingArea(cursorTracking) }
+        let tracking = NSTrackingArea(rect: .zero, options: [.mouseEnteredAndExited, .cursorUpdate, .activeAlways, .inVisibleRect], owner: self)
+        addTrackingArea(tracking)
+        cursorTracking = tracking
+    }
+
+    override func resetCursorRects() {
+        super.resetCursorRects()
+        addCursorRect(bounds, cursor: .arrow)
+    }
+
+    override func mouseEntered(with event: NSEvent) { NSCursor.arrow.set() }
+    override func cursorUpdate(with event: NSEvent) { NSCursor.arrow.set() }
+}
+
 final class FlyoutPanel: NSPanel {
     override var canBecomeKey: Bool { true }
     override var canBecomeMain: Bool { false }
@@ -19,6 +39,7 @@ final class FlyoutPanel: NSPanel {
 @MainActor
 final class TaskbarController: NSObject, ObservableObject {
     let preferences = Preferences()
+    private let dockVisibility = DockVisibilityController()
     let applications: ApplicationStore
     let windowManagement: WindowManagementStore
     let audio = AudioStore()
@@ -26,6 +47,7 @@ final class TaskbarController: NSObject, ObservableObject {
     let wifi = WiFiStore()
     let keyboard = KeyboardInputStore()
     let aiLimits = AILimitsStore()
+    let music = AppleMusicStore()
     let previews = WindowPreviewStore()
     let windowTiles = TaskbarWindowStore()
     let windowGroups = WindowGroupStore()
@@ -59,6 +81,11 @@ final class TaskbarController: NSObject, ObservableObject {
     }
 
     func start() {
+        dockVisibility.recover()
+        dockVisibility.setHidden(preferences.hideDockWhileRunning)
+        preferences.$hideDockWhileRunning.dropFirst().sink { [weak self] hidden in
+            self?.dockVisibility.setHidden(hidden)
+        }.store(in: &cancellables)
         let panel = BarPanel(contentRect: .zero, styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
         panel.level = .statusBar
         panel.collectionBehavior = [.canJoinAllSpaces, .stationary, .ignoresCycle]
@@ -67,7 +94,7 @@ final class TaskbarController: NSObject, ObservableObject {
         panel.hasShadow = false
         panel.hidesOnDeactivate = false
         panel.isMovable = false
-        panel.contentView = NSHostingView(rootView: TaskbarView(controller: self, applications: applications, preferences: preferences, audio: audio, battery: battery, wifi: wifi, keyboard: keyboard, aiLimits: aiLimits, windowTiles: windowTiles, windowGroups: windowGroups))
+        panel.contentView = TaskbarHostingView(rootView: TaskbarView(controller: self, applications: applications, preferences: preferences, audio: audio, battery: battery, wifi: wifi, keyboard: keyboard, aiLimits: aiLimits, windowTiles: windowTiles, windowGroups: windowGroups, music: music))
         bar = panel
         fullScreenCovered = FullScreenDetection.isMainDisplayCovered()
         isVisible = manuallyVisible && !fullScreenCovered
@@ -124,6 +151,8 @@ final class TaskbarController: NSObject, ObservableObject {
         createStatusItem()
         windowManagement.start()
     }
+
+    func restoreDock() { dockVisibility.setHidden(false) }
 
     var screen: NSScreen? {
         // The display with the menu bar is first, even when another app has focus.
@@ -281,10 +310,10 @@ final class TaskbarController: NSObject, ObservableObject {
         }
     }
 
-    func beginTileDrag(frame: CGRect, translation: CGSize) {
+    func beginTileDrag(frame: CGRect, translation: CGSize, sourceWindow: NSWindow? = nil) {
         endTileDrag()
-        guard let bar, let content = bar.contentView else { return }
-        let rect = content.convert(bar.convertFromScreen(frame), from: nil)
+        guard let window = sourceWindow ?? bar, let content = window.contentView else { return }
+        let rect = content.convert(window.convertFromScreen(frame), from: nil)
         guard let bitmap = content.bitmapImageRepForCachingDisplay(in: rect) else { return }
         content.cacheDisplay(in: rect, to: bitmap)
         let image = NSImage(size: frame.size)

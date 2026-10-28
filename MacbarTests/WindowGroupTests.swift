@@ -17,6 +17,27 @@ final class WindowGroupTests: XCTestCase {
         XCTAssertEqual(result.left.union(result.right), area)
     }
 
+    func testResizingEitherSharedEdgePreservesOuterBounds() {
+        let left = CGRect(x: 20, y: 25, width: 500, height: 715)
+        let right = CGRect(x: 520, y: 25, width: 501, height: 715)
+        XCTAssertEqual(WindowGroupGeometry.neighborFrame(previous: left, current: CGRect(x: 20, y: 25, width: 600, height: 715), neighbor: right, isLeft: true),
+                       CGRect(x: 620, y: 25, width: 401, height: 715))
+        XCTAssertEqual(WindowGroupGeometry.neighborFrame(previous: right, current: CGRect(x: 420, y: 25, width: 601, height: 715), neighbor: left, isLeft: false),
+                       CGRect(x: 20, y: 25, width: 400, height: 715))
+        XCTAssertEqual(WindowGroupGeometry.neighborFrame(previous: left, current: CGRect(x: 20, y: 25, width: 501, height: 715), neighbor: right, isLeft: true),
+                       CGRect(x: 521, y: 25, width: 500, height: 715))
+    }
+
+    func testOnlySharedEdgeResizesArePropagated() {
+        let left = CGRect(x: 0, y: 0, width: 500, height: 700)
+        let right = CGRect(x: 500, y: 0, width: 500, height: 700)
+        XCTAssertNil(WindowGroupGeometry.neighborFrame(previous: left, current: left.offsetBy(dx: 20, dy: 0), neighbor: right, isLeft: true))
+        XCTAssertNil(WindowGroupGeometry.neighborFrame(previous: left, current: CGRect(x: 0, y: 0, width: 500, height: 600), neighbor: right, isLeft: true))
+        XCTAssertNil(WindowGroupGeometry.neighborFrame(previous: left, current: CGRect(x: 0, y: 0, width: 1100, height: 700), neighbor: right, isLeft: true))
+        XCTAssertNil(WindowGroupGeometry.neighborFrame(previous: right, current: CGRect(x: 500, y: 0, width: 400, height: 700), neighbor: left, isLeft: false))
+        XCTAssertNil(WindowGroupGeometry.neighborFrame(previous: left, current: CGRect(x: 0, y: 0, width: 600, height: 700), neighbor: right.offsetBy(dx: 20, dy: 0), isLeft: true))
+    }
+
     func testGroupedTilesStayTogetherInStripAndWhenMoved() {
         func app(_ id: String) -> ApplicationItem {
             ApplicationItem(id: id, name: id, url: URL(fileURLWithPath: "/tmp/\(id).app"), icon: NSImage())
@@ -69,6 +90,28 @@ final class WindowGroupTests: XCTestCase {
         XCTAssertEqual(layout.tileWidths[1], 88)
         let overflow: CGFloat = layout.capacity < 10 ? 38 : 0
         XCTAssertLessThanOrEqual(layout.tilesWidth + layout.headerWidth + overflow, layout.availableWidth + 0.01)
+    }
+
+    func testGroupTitlesAreSizedIndividuallyAndStayTogetherWhenCrowded() {
+        func layout(_ width: CGFloat, extra: Int = 0) -> TaskbarStripLayout {
+            TaskbarStripLayout(screenWidth: width, alignment: .left,
+                preferredWidths: [300] + Array(repeating: 200, count: extra), mode: .windows,
+                iconWidths: [88] + Array(repeating: 44, count: extra),
+                memberPreferredWidths: [[110, 190]] + Array(repeating: [200], count: extra),
+                memberTitledTiles: [[true, true]] + Array(repeating: [true], count: extra),
+                trayWidth: 244, showSearch: false, showMissionControl: false)
+        }
+        let spacious = layout(1440)
+        XCTAssertEqual(spacious.memberWidths[0], [110, 190])
+        XCTAssertEqual(spacious.tileWidths[0], 300)
+        let compact = layout(800, extra: 5)
+        XCTAssertEqual(compact.capacity, 6)
+        XCTAssertTrue(compact.memberWidths[0].allSatisfy { $0 >= 64 && $0 < 190 })
+        let overflow = layout(640, extra: 20)
+        XCTAssertLessThan(overflow.capacity, 21)
+        XCTAssertEqual(overflow.memberWidths[0], [44, 44])
+        XCTAssertEqual(overflow.tileWidths[0], 88)
+        XCTAssertLessThanOrEqual(overflow.tilesWidth + overflow.headerWidth + 38, overflow.availableWidth + 0.01)
     }
 
     func testWindowTilesMatchOnlyTheSelectedWindow() {

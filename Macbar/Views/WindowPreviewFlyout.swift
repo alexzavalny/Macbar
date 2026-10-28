@@ -82,15 +82,38 @@ struct WindowPreviewFlyout: View {
 /// AppKit gives us the icon's actual screen bounds, including after alignment changes.
 struct AppIconHoverAnchor: NSViewRepresentable {
     let resolved: (NSView) -> Void
+    let hoverChanged: (Bool, CGRect) -> Void
 
     func makeNSView(context: Context) -> AnchorView {
         let view = AnchorView()
+        view.hoverChanged = hoverChanged
         DispatchQueue.main.async { resolved(view) }
         return view
     }
-    func updateNSView(_ view: AnchorView, context: Context) {}
+    func updateNSView(_ view: AnchorView, context: Context) {
+        view.hoverChanged = hoverChanged
+    }
 
     final class AnchorView: NSView {
+        var hoverChanged: ((Bool, CGRect) -> Void)?
+        private var hoverTracking: NSTrackingArea?
+
+        override func updateTrackingAreas() {
+            super.updateTrackingAreas()
+            if let hoverTracking { removeTrackingArea(hoverTracking) }
+            let tracking = NSTrackingArea(rect: .zero, options: [.mouseEnteredAndExited, .activeAlways, .inVisibleRect], owner: self)
+            addTrackingArea(tracking)
+            hoverTracking = tracking
+        }
+
+        override func mouseEntered(with event: NSEvent) { reportHover(true) }
+        override func mouseExited(with event: NSEvent) { reportHover(false) }
+
+        private func reportHover(_ inside: Bool) {
+            guard let window else { return }
+            hoverChanged?(inside, window.convertToScreen(convert(bounds, to: nil)))
+        }
+
         override func hitTest(_ point: NSPoint) -> NSView? { nil }
     }
 }

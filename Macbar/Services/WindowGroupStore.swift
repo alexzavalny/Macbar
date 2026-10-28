@@ -31,15 +31,114 @@ enum WindowGroupGeometry {
         return (area, CGRect(x: area.minX, y: area.minY, width: leftWidth, height: area.height),
                 CGRect(x: area.minX + leftWidth, y: area.minY, width: area.width - leftWidth, height: area.height))
     }
+
+    /// Only propagate a resize of the shared vertical edge, not a move or a
+    /// resize of an outside edge. Coordinates are Accessibility coordinates.
+    static func neighborFrame(previous: CGRect, current: CGRect, neighbor: CGRect, isLeft: Bool) -> CGRect? {
+        let tolerance: CGFloat = 2
+        func same(_ a: CGFloat, _ b: CGFloat) -> Bool { abs(a - b) <= tolerance }
+        guard previous.width > 0, current.width > 0, neighbor.width > 0,
+              same(previous.minY, current.minY), same(previous.maxY, current.maxY) else { return nil }
+        if isLeft {
+            guard same(previous.minX, current.minX), same(previous.maxX, neighbor.minX),
+                  abs(previous.maxX - current.maxX) > 0.01, current.maxX < neighbor.maxX else { return nil }
+            return CGRect(x: current.maxX, y: neighbor.minY, width: neighbor.maxX - current.maxX, height: neighbor.height)
+        }
+        guard same(previous.maxX, current.maxX), same(previous.minX, neighbor.maxX),
+              abs(previous.minX - current.minX) > 0.01, current.minX > neighbor.minX else { return nil }
+        return CGRect(x: neighbor.minX, y: neighbor.minY, width: current.minX - neighbor.minX, height: neighbor.height)
+    }
 }
 
 @MainActor
 final class WindowGroupStore: ObservableObject {
-    @Published private(set) var groups: [WindowGroup] = []
+    @Published private(set) var groups: [WindowGroup] = [] {
+        didSet { updateResizeTracking() }
+    }
     @Published var error: String?
     private var first: (tile: TaskbarTile, task: Task<WindowGroupMember?, Never>)?
     private var checkingWindows = false
     private let queue = DispatchQueue(label: "studio.macbar.window-group", qos: .userInitiated)
+    private var resizeTimer: Timer?
+    private var resizeCheckPending = false
+    // Accessed exclusively on queue.
+    nonisolated(unsafe) private var trackedFrames: [UUID: (CGRect, CGRect)] = [:]
+
+    deinit { resizeTimer?.invalidate() }
+
+    private func updateResizeTracking() {
+        let current = groups
+        queue.async { [weak self] in
+            let ids = Set(current.map(\.id))
+            self?.trackedFrames = self?.trackedFrames.filter { ids.contains($0.key) } ?? [:]
+        }
+        if current.isEmpty {
+            resizeTimer?.invalidate()
+            resizeTimer = nil
+        } else if resizeTimer == nil {
+            let timer = Timer(timeInterval: 0.12, repeats: true) { [weak self] _ in
+                Task { @MainActor in self?.checkGroupResizes() }
+            }
+            RunLoop.main.add(timer, forMode: .common)
+            resizeTimer = timer
+            checkGroupResizes()
+        }
+    }
+
+    private func checkGroupResizes() {
+        guard !resizeCheckPending, !groups.isEmpty, AXIsProcessTrusted() else { return }
+        resizeCheckPending = true
+        let current = groups
+        queue.async { [weak self] in
+            guard let self else { return }
+            for group in current { self.checkResize(group) }
+            DispatchQueue.main.async { [weak self] in self?.resizeCheckPending = false }
+        }
+    }
+
+    nonisolated private func checkResize(_ group: WindowGroup) {
+        guard let left = Self.readFrame(group.first.element), let right = Self.readFrame(group.second.element) else { return }
+        guard let (oldLeft, oldRight) = trackedFrames[group.id] else {
+            trackedFrames[group.id] = (left, right)
+            return
+        }
+        let leftChanged = !WindowFitGeometry.approximatelyEqual(left, oldLeft, tolerance: 0.01)
+        let rightChanged = !WindowFitGeometry.approximatelyEqual(right, oldRight, tolerance: 0.01)
+        if leftChanged && !rightChanged,
+           let target = WindowGroupGeometry.neighborFrame(previous: oldLeft, current: left, neighbor: oldRight, isLeft: true) {
+            Self.setFrame(group.second.element, target)
+            trackedFrames[group.id] = (left, Self.readFrame(group.second.element) ?? right)
+        } else if rightChanged && !leftChanged,
+                  let target = WindowGroupGeometry.neighborFrame(previous: oldRight, current: right, neighbor: oldLeft, isLeft: false) {
+            Self.setFrame(group.first.element, target)
+            trackedFrames[group.id] = (Self.readFrame(group.first.element) ?? left, right)
+        } else {
+            trackedFrames[group.id] = (left, right)
+        }
+    }
+
+    nonisolated private static func readFrame(_ window: AXUIElement) -> CGRect? {
+        AXUIElementSetMessagingTimeout(window, 0.2)
+        var position: CFTypeRef?
+        var size: CFTypeRef?
+        guard AXUIElementCopyAttributeValue(window, kAXPositionAttribute as CFString, &position) == .success,
+              AXUIElementCopyAttributeValue(window, kAXSizeAttribute as CFString, &size) == .success,
+              let position, let size, CFGetTypeID(position) == AXValueGetTypeID(), CFGetTypeID(size) == AXValueGetTypeID() else { return nil }
+        var point = CGPoint.zero
+        var dimensions = CGSize.zero
+        guard AXValueGetValue(position as! AXValue, .cgPoint, &point),
+              AXValueGetValue(size as! AXValue, .cgSize, &dimensions) else { return nil }
+        return CGRect(origin: point, size: dimensions)
+    }
+
+    nonisolated private static func setFrame(_ window: AXUIElement, _ frame: CGRect) {
+        var origin = frame.origin
+        var size = frame.size
+        guard let point = AXValueCreate(.cgPoint, &origin), let dimensions = AXValueCreate(.cgSize, &size) else { return }
+        AXUIElementSetAttributeValue(window, kAXPositionAttribute as CFString, point)
+        AXUIElementSetAttributeValue(window, kAXSizeAttribute as CFString, dimensions)
+        AXUIElementSetAttributeValue(window, kAXPositionAttribute as CFString, point)
+    }
 
     func endGesture() { first = nil }
 

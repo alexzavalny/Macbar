@@ -32,6 +32,8 @@
 	<string>Macbar needs Location permission to display nearby Wi-Fi network names. Your location is not recorded or shared.</string>
 	<key>NSLocationWhenInUseUsageDescription</key>
 	<string>Macbar needs Location permission to display nearby Wi-Fi network names. Your location is not recorded or shared.</string>
+	<key>NSAppleEventsUsageDescription</key>
+	<string>Macbar needs permission to control playback in Music.</string>
 	<key>NSPrincipalClass</key>
 	<string>NSApplication</string>
 </dict>

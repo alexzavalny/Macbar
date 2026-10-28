@@ -71,7 +71,7 @@ final class AILimitsTests: XCTestCase {
         for control in TaskbarControl.allCases { preferences.setVisible(false, for: control) }
         let restored = Preferences(defaults: defaults)
         XCTAssertTrue(TaskbarControl.allCases.allSatisfy { !restored.shows($0) })
-        XCTAssertEqual(restored.trayWidth, 28)
+        XCTAssertEqual(restored.trayWidth, 58)
         XCTAssertLessThan(restored.trayWidth, fullWidth)
         for control in TaskbarControl.allCases { restored.setVisible(true, for: control) }
         XCTAssertTrue(TaskbarControl.allCases.allSatisfy(Preferences(defaults: defaults).shows))

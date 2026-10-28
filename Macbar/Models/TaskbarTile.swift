@@ -16,19 +16,31 @@ struct TaskbarWindow: Identifiable, Equatable {
     }
 }
 
+enum SpecialTile: String {
+    case appleMusic = "com.apple.Music"
+
+    var width: CGFloat { 122 }
+}
+
 struct TaskbarTile: Identifiable {
     let app: ApplicationItem
     let window: TaskbarWindow?
+    var special: SpecialTile? { SpecialTile(rawValue: app.id) }
     var id: String { window.map { "window:\($0.id)" } ?? "app:\(app.id)" }
     var title: String {
         guard let title = window?.title, !title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return app.name }
         return title
     }
 
+    func showsTitle(mode: TaskbarMode, isRunning: Bool) -> Bool {
+        special == nil && (window != nil || (mode == .windows && isRunning))
+    }
+
     static func make(apps: [ApplicationItem], windows: [TaskbarWindow], mode: TaskbarMode, separateMultipleWindows: Bool = false) -> [Self] {
         var seen = Set<String>()
         return apps.filter { seen.insert($0.id).inserted }.flatMap { app -> [Self] in
             let appWindows = windows.filter { $0.bundleID == app.id }
+            if SpecialTile(rawValue: app.id) != nil { return [Self(app: app, window: nil)] }
             let matches = mode == .windows || (separateMultipleWindows && appWindows.count >= 2) ? appWindows : []
             // A pinned app is replaced by its windows, so it doesn't gain a duplicate launcher.
             return matches.isEmpty ? [Self(app: app, window: nil)] : matches.map { Self(app: app, window: $0) }
@@ -137,6 +149,7 @@ struct TaskbarStripLayout {
     let showsSearchLabel: Bool
     let availableWidth: CGFloat
     let tileWidths: [CGFloat]
+    let memberWidths: [[CGFloat]]
     let capacity: Int
     private let searchVisible: Bool
     private let missionControlVisible: Bool
@@ -148,6 +161,8 @@ struct TaskbarStripLayout {
 
     init(screenWidth: CGFloat, alignment: TaskbarAlignment, preferredWidths: [CGFloat], mode: TaskbarMode,
          titledTiles: [Bool]? = nil, iconWidths: [CGFloat]? = nil,
+         memberPreferredWidths: [[CGFloat]]? = nil, memberTitledTiles: [[Bool]]? = nil,
+         memberIconWidths: [[CGFloat]]? = nil,
          trayWidth: CGFloat = Self.trayWidth, showSearch: Bool = true, showMissionControl: Bool = true) {
         searchVisible = showSearch
         missionControlVisible = showMissionControl
@@ -156,13 +171,27 @@ struct TaskbarStripLayout {
         let gaps = CGFloat(max(0, count - 1)) * spacing
         let titles = titledTiles?.count == count ? titledTiles! : Array(repeating: mode == .windows, count: count)
         let icons = iconWidths?.count == count ? iconWidths! : Array(repeating: CGFloat(44), count: count)
-        let widths = (0..<count).map { titles[$0] ? min(200, max(88, preferredWidths[$0])) : icons[$0] }
+        let hasMembers = memberPreferredWidths?.count == count && memberTitledTiles?.count == count &&
+            (0..<count).allSatisfy { !memberPreferredWidths![$0].isEmpty && memberPreferredWidths![$0].count == memberTitledTiles![$0].count }
+        let memberTitles = hasMembers ? memberTitledTiles! : titles.map { [$0] }
+        let validMemberIcons = hasMembers && memberIconWidths?.count == count &&
+            (0..<count).allSatisfy { memberIconWidths![$0].count == memberTitles[$0].count }
+        let memberIcons = validMemberIcons ? memberIconWidths! : (hasMembers ? memberTitles.map { Array(repeating: CGFloat(44), count: $0.count) } : icons.map { [$0] })
+        let preferred = hasMembers ? memberPreferredWidths! : preferredWidths.map { [$0] }
+        let memberDesired = (0..<count).map { index in
+            preferred[index].indices.map { member in
+                memberTitles[index][member] ? min(200, max(88, preferred[index][member])) : memberIcons[index][member]
+            }
+        }
+        let widths = memberDesired.map { $0.reduce(0, +) }
         let desired = widths.reduce(0, +) + gaps
         let initialHeader = Self.headerWidth(search: showSearch, searchLabel: screenWidth >= 1100, missionControl: showMissionControl)
         let centeredBudget = max(0, screenWidth - trayWidth * 2 - 24)
         centered = alignment == .center && initialHeader + desired <= centeredBudget
         availableWidth = max(0, screenWidth - (centered ? trayWidth * 2 + 24 : trayWidth + 24))
-        let minimumWidths = (0..<count).map { titles[$0] ? CGFloat(64) : icons[$0] }
+        let minimumWidths = (0..<count).map { index in
+            memberTitles[index].indices.reduce(CGFloat(0)) { $0 + (memberTitles[index][$1] ? 64 : memberIcons[index][$1]) }
+        }
         let readableMinimum = minimumWidths.reduce(0, +)
         showsSearchLabel = showSearch && screenWidth >= 1100 && initialHeader + readableMinimum + gaps <= availableWidth
         let budget = max(0, availableWidth - Self.headerWidth(search: showSearch, searchLabel: showsSearchLabel, missionControl: showMissionControl))
@@ -170,6 +199,7 @@ struct TaskbarStripLayout {
         if desired <= budget {
             capacity = count
             tileWidths = widths
+            memberWidths = memberDesired
         } else if readableMinimum + gaps <= budget {
             // Water filling: short names keep their natural width, longer ones
             // share the remaining room instead of wasting it on uniform tiles.
@@ -177,11 +207,22 @@ struct TaskbarStripLayout {
             var high: CGFloat = 200
             for _ in 0..<24 {
                 let cap = (low + high) / 2
-                if (0..<count).reduce(CGFloat(0), { $0 + (titles[$1] ? min(widths[$1], cap) : widths[$1]) }) + gaps <= budget { low = cap }
+                let capped = (0..<count).reduce(CGFloat(0)) { total, index in
+                    total + memberDesired[index].indices.reduce(CGFloat(0)) { sum, member in
+                        sum + (memberTitles[index][member] ? min(memberDesired[index][member], cap) : memberDesired[index][member])
+                    }
+                }
+                if capped + gaps <= budget { low = cap }
                 else { high = cap }
             }
             capacity = count
-            tileWidths = (0..<count).map { titles[$0] ? min(widths[$0], low) : widths[$0] }
+            let cappedMembers = (0..<count).map { index in
+                memberDesired[index].indices.map { member in
+                    memberTitles[index][member] ? min(memberDesired[index][member], low) : memberDesired[index][member]
+                }
+            }
+            memberWidths = cappedMembers
+            tileWidths = cappedMembers.map { $0.reduce(0, +) }
         } else {
             let allIconsFit = icons.reduce(0, +) + gaps <= budget
             let iconBudget = max(0, budget - (allIconsFit ? 0 : 38))
@@ -195,6 +236,7 @@ struct TaskbarStripLayout {
             }
             capacity = visible.count
             tileWidths = visible
+            memberWidths = Array(memberIcons.prefix(visible.count))
         }
     }
 

@@ -21,5 +21,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         coordinator?.start()
     }
 
+    func applicationWillTerminate(_ notification: Notification) {
+        coordinator?.restoreDock()
+    }
+
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { false }
 }
