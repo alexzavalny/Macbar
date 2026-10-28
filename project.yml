@@ -1,0 +1,57 @@
+name: Macbar
+options:
+  bundleIdPrefix: studio.macbar
+  deploymentTarget:
+    macOS: "14.0"
+  xcodeVersion: "26.0"
+settings:
+  base:
+    SWIFT_VERSION: "5.0"
+    MACOSX_DEPLOYMENT_TARGET: "14.0"
+    CODE_SIGN_IDENTITY: "Apple Development"
+    CODE_SIGN_STYLE: Manual
+    DEVELOPMENT_TEAM: 7RAJ8692JX
+    ENABLE_HARDENED_RUNTIME: YES
+targets:
+  Macbar:
+    type: application
+    platform: macOS
+    sources:
+      - path: Macbar
+    info:
+      path: Macbar/Info.plist
+      properties:
+        CFBundleDisplayName: Macbar
+        CFBundleShortVersionString: "0.1.0"
+        CFBundleVersion: "1"
+        CFBundleIconFile: AppIcon
+        LSUIElement: true
+        NSHighResolutionCapable: true
+        NSLocationUsageDescription: "Macbar needs Location permission to display nearby Wi-Fi network names. Your location is not recorded or shared."
+        NSLocationWhenInUseUsageDescription: "Macbar needs Location permission to display nearby Wi-Fi network names. Your location is not recorded or shared."
+        NSPrincipalClass: NSApplication
+        NSHumanReadableCopyright: "Copyright © 2026 Macbar"
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: studio.macbar.app
+        PRODUCT_NAME: Macbar
+        COMBINE_HIDPI_IMAGES: YES
+        GENERATE_INFOPLIST_FILE: NO
+        LD_RUNPATH_SEARCH_PATHS: "$(inherited) @executable_path/../Frameworks"
+  MacbarTests:
+    type: bundle.unit-test
+    platform: macOS
+    sources: [MacbarTests]
+    dependencies:
+      - target: Macbar
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: studio.macbar.tests
+        GENERATE_INFOPLIST_FILE: YES
+schemes:
+  Macbar:
+    build:
+      targets:
+        Macbar: all
+    test:
+      targets: [MacbarTests]
