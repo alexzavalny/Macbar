@@ -2,6 +2,20 @@ import XCTest
 @testable import Macbar
 
 final class WindowFitTests: XCTestCase {
+    func testFittingChoosesTheDisplayContainingTheWindow() {
+        let primary = WindowFitContext(screen: CGRect(x: 0, y: 0, width: 1440, height: 900),
+            workArea: CGRect(x: 0, y: 25, width: 1440, height: 875),
+            taskbar: CGRect(x: 0, y: 846, width: 1440, height: 54))
+        let upper = WindowFitContext(screen: CGRect(x: -701, y: -1440, width: 2560, height: 1440),
+            workArea: CGRect(x: -701, y: -1415, width: 2560, height: 1415),
+            taskbar: CGRect(x: -701, y: -54, width: 2560, height: 54))
+        XCTAssertEqual(WindowFitGeometry.context(for: upper.workArea, in: [primary, upper]), upper)
+        let adjustment = WindowFitGeometry.adjustment(for: upper.workArea, context: upper)
+        XCTAssertEqual(adjustment?.adjusted.maxY, upper.taskbar.minY)
+        XCTAssertEqual(WindowFitGeometry.context(for: primary.workArea, in: [primary, upper]), primary)
+        XCTAssertNil(WindowFitGeometry.context(for: upper.workArea, in: [primary]))
+    }
+
     private let context = WindowFitContext(
         screen: CGRect(x: 0, y: 0, width: 1440, height: 900),
         workArea: CGRect(x: 0, y: 25, width: 1440, height: 875),

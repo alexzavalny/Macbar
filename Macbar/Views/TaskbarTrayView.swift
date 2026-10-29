@@ -9,6 +9,7 @@ struct TaskbarTrayView: View {
     @ObservedObject var wifi: WiFiStore
     @ObservedObject var keyboard: KeyboardInputStore
     @ObservedObject var aiLimits: AILimitsStore
+    let displayID: CGDirectDisplayID
     @State private var draggedItem: TrayItem?
     @State private var pendingOrder: [TrayItem]?
     @State private var buttons: [TrayItem: NSView] = [:]
@@ -65,14 +66,14 @@ struct TaskbarTrayView: View {
                 KeyboardInputMenu(keyboard: keyboard, willOpen: { controller.dismissPopup() },
                                   dragActions: dragActions(for: item), register: { buttons[item] = $0 })
             } else {
-                TrayButton(selected: item != .trash && controller.popup == popup(for: item),
+                TrayButton(selected: item != .trash && controller.isPopup(popup(for: item), on: displayID),
                            accessibilityLabel: title(for: item),
                            accessibilityValue: item == .battery ? battery.state?.summary ?? "" : item == .cpu ? cpu.summary : "",
                            help: help(for: item), dragActions: dragActions(for: item),
                            register: { buttons[item] = $0 }, action: {
                     drawerOpen = false
                     if item == .trash { controller.openTrash() }
-                    else { controller.toggle(popup(for: item)) }
+                    else { controller.toggle(popup(for: item), on: displayID) }
                 }) { label(for: item) }
             }
         }
@@ -241,20 +242,19 @@ private struct CPUMeter: View {
     let fraction: Double?
     private let height: CGFloat = 22
 
+    private var fillColor: Color {
+        switch fraction ?? 0 {
+        case 0.95...: return .red
+        case 0.55...: return .yellow
+        default: return .green
+        }
+    }
+
     var body: some View {
         ZStack(alignment: .bottom) {
             RoundedRectangle(cornerRadius: 3).fill(.primary.opacity(0.10))
-            LinearGradient(stops: [
-                .init(color: .green, location: 0),
-                .init(color: .green, location: 0.35),
-                .init(color: .yellow, location: 0.55),
-                .init(color: .yellow, location: 0.95),
-                .init(color: .red, location: 0.95),
-                .init(color: .red, location: 1)
-            ], startPoint: .bottom, endPoint: .top)
-            .mask(alignment: .bottom) {
-                Rectangle().frame(height: height * CGFloat(min(max(fraction ?? 0, 0), 1)))
-            }
+            Rectangle().fill(fillColor)
+                .frame(height: height * CGFloat(min(max(fraction ?? 0, 0), 1)))
         }
         .frame(width: 12, height: height)
         .clipShape(RoundedRectangle(cornerRadius: 3))

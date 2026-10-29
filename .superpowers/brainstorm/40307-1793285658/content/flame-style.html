@@ -1,0 +1,221 @@
+<h2>Which flame feels right?</h2>
+<p class="subtitle">Each strip: idle app, then heat level 1 → 2 → 3, then a window tile at level 2. Top row is 2× size, bottom row is real size. Click the one you like.</p>
+
+<div style="display:flex;gap:8px;align-items:center;margin:0 0 1rem">
+  <span class="label" style="margin:0">Flames</span>
+  <button class="mock-button" id="behind" style="opacity:1">Behind icon</button>
+  <button class="mock-button" id="front" style="opacity:.45">In front of icon</button>
+</div>
+
+<div class="cards" style="grid-template-columns:1fr">
+  <div class="card" data-choice="glow" onclick="toggleSelect(this)">
+    <div class="card-image" style="aspect-ratio:auto;display:block;padding:18px;background:#141416"><div class="strip" data-style="glow"></div></div>
+    <div class="card-body"><h3>A · Soft glow</h3><p>Blurry blobs of light drift up and fade, yellow at the base, red at the tips. Diffused, like light through a lamp shade.</p></div>
+  </div>
+  <div class="card" data-choice="pixel" onclick="toggleSelect(this)">
+    <div class="card-image" style="aspect-ratio:auto;display:block;padding:18px;background:#141416"><div class="strip" data-style="pixel"></div></div>
+    <div class="card-body"><h3>B · LED pixels</h3><p>Low-res dot grid running a fire simulation, like Govee's LED panels and curtain lights.</p></div>
+  </div>
+  <div class="card" data-choice="waves" onclick="toggleSelect(this)">
+    <div class="card-image" style="aspect-ratio:auto;display:block;padding:18px;background:#141416"><div class="strip" data-style="waves"></div></div>
+    <div class="card-body"><h3>C · Cartoon tongues</h3><p>Three flat layers (red, orange, yellow) of pointed flame shapes that sway and flicker. Clean vector look.</p></div>
+  </div>
+</div>
+
+<style>
+  .strip .row { display:flex; gap:10px; align-items:flex-end; background:#232326; border-radius:10px; padding:8px 10px; width:max-content; max-width:100%; overflow:hidden }
+  .strip .row + .row { margin-top:12px }
+  .strip figure { margin:0; display:flex; flex-direction:column; align-items:center; gap:4px }
+  .strip figcaption { font:11px -apple-system,system-ui,sans-serif; color:#8a8a8f }
+  .strip canvas { display:block }
+</style>
+
+<script>
+(function () {
+  const DPR = window.devicePixelRatio || 1, S = 2;
+  const HEIGHT = [0, 0.34, 0.55, 0.8];
+  const LAYOUT = [
+    { kind: 'icon', app: 'arc', level: 0, label: 'idle' },
+    { kind: 'icon', app: 'rider', level: 1, label: 'level 1' },
+    { kind: 'icon', app: 'rider', level: 2, label: 'level 2' },
+    { kind: 'icon', app: 'rider', level: 3, label: 'level 3' },
+    { kind: 'wide', app: 'rider', level: 2, label: 'window tile · level 2' },
+  ];
+  let front = false;
+  const tiles = [];
+
+  function canvas(w, h, scale) {
+    const c = document.createElement('canvas');
+    c.width = Math.round(w * scale * DPR); c.height = Math.round(h * scale * DPR);
+    c.style.width = (w * scale) + 'px'; c.style.height = (h * scale) + 'px';
+    return c;
+  }
+
+  document.querySelectorAll('.strip').forEach(strip => {
+    const big = document.createElement('div'), small = document.createElement('div');
+    big.className = small.className = 'row';
+    strip.append(big, small);
+    for (const spec of LAYOUT) {
+      const w = spec.kind === 'wide' ? 170 : 44, h = 50;
+      const bc = canvas(w, h, S), sc = canvas(w, h, 1);
+      const fig = document.createElement('figure'), cap = document.createElement('figcaption');
+      cap.textContent = spec.label; fig.append(bc, cap); big.append(fig); small.append(sc);
+      tiles.push({ ...spec, style: strip.dataset.style, w, h, bc, sc, parts: [], acc: 0, grid: null, seed: Math.random() * 100 });
+    }
+  });
+
+  document.getElementById('behind').onclick = e => { e.stopPropagation(); front = false; setToggle(); };
+  document.getElementById('front').onclick = e => { e.stopPropagation(); front = true; setToggle(); };
+  function setToggle() {
+    document.getElementById('behind').style.opacity = front ? .45 : 1;
+    document.getElementById('front').style.opacity = front ? 1 : .45;
+  }
+
+  function rr(ctx, x, y, w, h, r) {
+    ctx.beginPath(); ctx.moveTo(x + r, y);
+    ctx.arcTo(x + w, y, x + w, y + h, r); ctx.arcTo(x + w, y + h, x, y + h, r);
+    ctx.arcTo(x, y + h, x, y, r); ctx.arcTo(x, y, x + w, y, r); ctx.closePath();
+  }
+  const lerp = (a, b, k) => a + (b - a) * k;
+  function ramp(stops, v) {
+    if (v <= stops[0][0]) return stops[0][1];
+    for (let i = 1; i < stops.length; i++) if (v <= stops[i][0]) {
+      const [p0, c0] = stops[i - 1], [p1, c1] = stops[i], k = (v - p0) / (p1 - p0);
+      return c0.map((x, j) => lerp(x, c1[j], k));
+    }
+    return stops[stops.length - 1][1];
+  }
+
+  function drawIcon(ctx, app, x, y, s) {
+    ctx.save();
+    rr(ctx, x, y, s, s, s * 0.23);
+    const g = ctx.createLinearGradient(x, y, x + s, y + s);
+    if (app === 'rider') { g.addColorStop(0, '#ff2d8f'); g.addColorStop(.5, '#ff8a1f'); g.addColorStop(1, '#e8f54a'); }
+    else { g.addColorStop(0, '#ff4f6d'); g.addColorStop(1, '#5b5cff'); }
+    ctx.fillStyle = g; ctx.fill();
+    if (app === 'rider') {
+      const i = s * 0.17; ctx.fillStyle = '#000'; ctx.fillRect(x + i, y + i, s - 2 * i, s - 2 * i);
+      ctx.fillStyle = '#fff'; ctx.font = `700 ${s * 0.27}px -apple-system,system-ui,sans-serif`; ctx.textBaseline = 'alphabetic';
+      ctx.fillText('RD', x + i + s * 0.07, y + s * 0.52); ctx.fillRect(x + i + s * 0.07, y + s - i - s * 0.13, s * 0.28, s * 0.05);
+    } else {
+      ctx.fillStyle = '#fff'; ctx.font = `700 ${s * 0.5}px -apple-system,system-ui,sans-serif`;
+      ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText('A', x + s / 2, y + s / 2 + 1);
+    }
+    ctx.restore();
+  }
+
+  function drawChrome(ctx, tile) {
+    if (tile.kind === 'wide') {
+      drawIcon(ctx, tile.app, 10, 9, 32);
+      ctx.fillStyle = '#f2f2f2'; ctx.font = '12px -apple-system,system-ui,sans-serif'; ctx.textBaseline = 'middle'; ctx.textAlign = 'left';
+      ctx.fillText('Program.cs — Rider', 51, 25);
+    } else {
+      drawIcon(ctx, tile.app, 5, 8, 34);
+      ctx.fillStyle = 'rgba(255,255,255,0.4)'; rr(ctx, tile.w / 2 - 2.5, tile.h - 5, 5, 3, 1.5); ctx.fill();
+    }
+  }
+
+  // A · soft glow particles
+  function glow(t, ctx, now, dt) {
+    const { w, h, level } = t, H = h * HEIGHT[level];
+    const bed = ctx.createLinearGradient(0, h, 0, h - H * 0.55);
+    bed.addColorStop(0, 'rgba(255,90,20,0.55)'); bed.addColorStop(1, 'rgba(255,90,20,0)');
+    ctx.fillStyle = bed; ctx.fillRect(0, h - H * 0.55, w, H * 0.55);
+    t.acc += (8 + level * 7) * (w / 44) * dt;
+    while (t.acc >= 1) {
+      t.acc--;
+      const life = 0.55 + Math.random() * 0.5;
+      t.parts.push({ x: Math.random() * w, y: h + 3, r: 5 + Math.random() * 4 + level, life, age: 0, seed: Math.random() * 6.28, vy: H * 0.95 / life });
+    }
+    ctx.globalCompositeOperation = 'lighter';
+    for (const p of t.parts) {
+      p.age += dt; const k = p.age / p.life; if (k >= 1) continue;
+      p.y -= p.vy * dt; p.x += Math.sin(now * 4 + p.seed) * 9 * dt;
+      const r = p.r * (1 - k * 0.6);
+      const c = ramp([[0, [255, 235, 140]], [0.35, [255, 150, 30]], [1, [225, 35, 20]]], k);
+      const a = 0.7 * Math.pow(1 - k, 0.8);
+      const rg = ctx.createRadialGradient(p.x, p.y, 0, p.x, p.y, r);
+      rg.addColorStop(0, `rgba(${c[0]|0},${c[1]|0},${c[2]|0},${a})`); rg.addColorStop(1, `rgba(${c[0]|0},${c[1]|0},${c[2]|0},0)`);
+      ctx.fillStyle = rg; ctx.fillRect(p.x - r, p.y - r, r * 2, r * 2);
+    }
+    t.parts = t.parts.filter(p => p.age < p.life);
+    ctx.globalCompositeOperation = 'source-over';
+  }
+
+  // B · LED pixel fire
+  const PALETTE = [[0, [90, 0, 0]], [0.2, [160, 20, 0]], [0.45, [235, 60, 10]], [0.7, [255, 140, 20]], [0.9, [255, 215, 80]], [1, [255, 250, 200]]];
+  const DECAY = [0, 0.42, 0.27, 0.18];
+  function pixel(t, ctx, now, dt) {
+    const pitch = 4, cols = Math.ceil(t.w / pitch), rows = Math.ceil(t.h / pitch);
+    if (!t.grid) t.grid = new Float32Array(cols * rows);
+    t.acc += dt;
+    while (t.acc > 1 / 22) {
+      t.acc -= 1 / 22;
+      const old = t.grid, next = new Float32Array(cols * rows), d = DECAY[t.level];
+      for (let c = 0; c < cols; c++) next[(rows - 1) * cols + c] = 0.82 + Math.random() * 0.18;
+      for (let r = 0; r < rows - 1; r++) for (let c = 0; c < cols; c++) {
+        const sc = Math.min(cols - 1, Math.max(0, c + Math.round(Math.random() * 2 - 1)));
+        next[r * cols + c] = Math.max(0, old[(r + 1) * cols + sc] - Math.random() * d);
+      }
+      t.grid = next;
+    }
+    for (let pass = 0; pass < 2; pass++) {
+      ctx.globalCompositeOperation = pass ? 'source-over' : 'lighter';
+      for (let r = 0; r < rows; r++) for (let c = 0; c < cols; c++) {
+        const v = t.grid[r * cols + c]; if (v < 0.05) continue;
+        const col = ramp(PALETTE, v), a = Math.min(1, v * 2.6);
+        const x = c * pitch, y = t.h - (rows - r) * pitch;
+        if (pass === 0) { ctx.fillStyle = `rgba(${col[0]|0},${col[1]|0},${col[2]|0},${a * 0.25})`; ctx.fillRect(x - 1.5, y - 1.5, pitch + 3, pitch + 3); }
+        else { ctx.fillStyle = `rgba(${col[0]|0},${col[1]|0},${col[2]|0},${a})`; rr(ctx, x + 0.5, y + 0.5, pitch - 1, pitch - 1, 1); ctx.fill(); }
+      }
+    }
+    ctx.globalCompositeOperation = 'source-over';
+  }
+
+  // C · cartoon layered tongues
+  const LAYERS = [
+    { scale: 1.0, top: '#d0181c', bottom: '#ff4a1f', speed: 2.3, phase: 0, off: 0 },
+    { scale: 0.72, top: '#ff6a14', bottom: '#ffa424', speed: 3.1, phase: 1.7, off: 0.5 },
+    { scale: 0.45, top: '#ffc02e', bottom: '#fff0a0', speed: 4.2, phase: 3.1, off: 0.2 },
+  ];
+  function waves(t, ctx, now) {
+    const { w, h, level } = t, H = h * HEIGHT[level], n = Math.max(3, Math.round(w / 12));
+    for (const L of LAYERS) {
+      ctx.beginPath(); ctx.moveTo(0, h);
+      const sway = Math.sin(now * 1.6 + L.phase + t.seed) * 0.08;
+      for (let x = 0; x <= w; x += 0.5) {
+        const u = x / (w / n) + L.off + sway, k = Math.floor(u), f = u - k;
+        const amp = 0.62 + 0.38 * Math.sin(now * L.speed + k * 1.9 + L.phase + t.seed);
+        const profile = Math.pow(1 - Math.abs(2 * f - 1), 1.7);
+        ctx.lineTo(x, h - L.scale * H * (0.22 + 0.78 * profile * amp));
+      }
+      ctx.lineTo(w, h); ctx.closePath();
+      const g = ctx.createLinearGradient(0, h, 0, h - L.scale * H);
+      g.addColorStop(0, L.bottom); g.addColorStop(1, L.top);
+      ctx.fillStyle = g; ctx.shadowColor = L.bottom; ctx.shadowBlur = 6; ctx.fill(); ctx.shadowBlur = 0;
+    }
+  }
+
+  const DRAW = { glow, pixel, waves };
+  let last = performance.now();
+  function frame(ms) {
+    const now = ms / 1000, dt = Math.min(0.05, (ms - last) / 1000); last = ms;
+    for (const t of tiles) {
+      const ctx = t.bc.getContext('2d');
+      ctx.setTransform(S * DPR, 0, 0, S * DPR, 0, 0);
+      ctx.clearRect(0, 0, t.w, t.h);
+      ctx.save(); rr(ctx, 0, 0, t.w, t.h, 7); ctx.clip();
+      if (t.kind === 'wide') { ctx.fillStyle = 'rgba(255,255,255,0.035)'; ctx.fillRect(0, 0, t.w, t.h); }
+      if (!front && t.level) DRAW[t.style](t, ctx, now, dt);
+      ctx.restore();
+      drawChrome(ctx, t);
+      if (front && t.level) { ctx.save(); rr(ctx, 0, 0, t.w, t.h, 7); ctx.clip(); ctx.globalAlpha = 0.85; DRAW[t.style](t, ctx, now, dt); ctx.restore(); }
+      const sctx = t.sc.getContext('2d');
+      sctx.setTransform(1, 0, 0, 1, 0, 0); sctx.clearRect(0, 0, t.sc.width, t.sc.height);
+      sctx.imageSmoothingQuality = 'high'; sctx.drawImage(t.bc, 0, 0, t.sc.width, t.sc.height);
+    }
+    requestAnimationFrame(frame);
+  }
+  requestAnimationFrame(frame);
+})();
+</script>

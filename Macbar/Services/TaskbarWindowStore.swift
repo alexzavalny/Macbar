@@ -14,6 +14,7 @@ protocol TaskbarWindowProviding {
 @MainActor
 final class TaskbarWindowStore: ObservableObject {
     @Published private(set) var windows: [TaskbarWindow] = []
+    @Published private(set) var hasWindowAccess = false
     private let provider: TaskbarWindowProviding
     private let hasAccess: () -> Bool
     private var task: Task<Void, Never>?
@@ -26,7 +27,9 @@ final class TaskbarWindowStore: ObservableObject {
     }
 
     func refresh(processes: [TaskbarWindowProcess], frontmostPID: pid_t?, enabled: Bool) {
-        guard enabled, hasAccess() else { clear(); return }
+        let allowed = hasAccess()
+        if hasWindowAccess != allowed { hasWindowAccess = allowed }
+        guard enabled, allowed else { clear(); return }
         guard task == nil else { return }
         let request = generation
         task = Task { [weak self] in
@@ -53,14 +56,18 @@ final class AccessibilityTaskbarWindowProvider: TaskbarWindowProviding, @uncheck
     private var known: [pid_t: [(element: AXUIElement, id: UUID)]] = [:]
     private var snapshots: [pid_t: [TaskbarWindow]] = [:]
     private let readAttribute: (AXUIElement, String) -> CFTypeRef?
+    private let visibility: () -> WindowVisibilitySnapshot
 
-    init(readAttribute: @escaping (AXUIElement, String) -> CFTypeRef? = AccessibilityTaskbarWindowProvider.systemAttribute) {
+    init(visibility: @escaping () -> WindowVisibilitySnapshot = WindowVisibilitySnapshot.current,
+         readAttribute: @escaping (AXUIElement, String) -> CFTypeRef? = AccessibilityTaskbarWindowProvider.systemAttribute) {
+        self.visibility = visibility
         self.readAttribute = readAttribute
     }
 
     func windows(for processes: [TaskbarWindowProcess], frontmostPID: pid_t?) async -> [TaskbarWindow] {
         await withCheckedContinuation { continuation in
             queue.async { [self] in
+                let visibleWindows = visibility()
                 var next: [pid_t: [(element: AXUIElement, id: UUID)]] = [:]
                 var result: [TaskbarWindow] = []
                 for process in processes {
@@ -73,6 +80,8 @@ final class AccessibilityTaskbarWindowProvider: TaskbarWindowProviding, @uncheck
                         result += (snapshots[process.id] ?? []).map { window in
                             var retained = window
                             if process.id != frontmostPID { retained.isFocused = false }
+                            retained.isOnScreen = visibleWindows.isOnScreen(processID: retained.processID,
+                                title: retained.title, frame: retained.frame)
                             return retained
                         }
                         continue
@@ -94,11 +103,14 @@ final class AccessibilityTaskbarWindowProvider: TaskbarWindowProviding, @uncheck
                         let id = known[process.id]?.first { CFEqual($0.element, element) }?.id ?? UUID()
                         let previous = snapshots[process.id]?.first { $0.id == id }
                         next[process.id, default: []].append((element, id))
+                        let frame = readFrame(element) ?? previous?.frame
+                        let title = readAttribute(element, kAXTitleAttribute) as? String ?? previous?.title ?? ""
                         result.append(TaskbarWindow(id: id, bundleID: process.bundleID, processID: process.id,
-                            title: readAttribute(element, kAXTitleAttribute) as? String ?? previous?.title ?? "",
+                            title: title,
                             isMinimized: minimized ?? previous?.isMinimized ?? false,
                             isFocused: process.id == frontmostPID && focused.map { CFEqual($0, element) } == true,
-                            element: element))
+                            element: element, frame: frame,
+                            isOnScreen: visibleWindows.isOnScreen(processID: process.id, title: title, frame: frame)))
                     }
                 }
                 // AX window arrays often reorder on focus changes. Keep tile positions stable.
@@ -112,6 +124,17 @@ final class AccessibilityTaskbarWindowProvider: TaskbarWindowProviding, @uncheck
                 continuation.resume(returning: result)
             }
         }
+    }
+
+    private func readFrame(_ element: AXUIElement) -> CGRect? {
+        guard let positionValue = readAttribute(element, kAXPositionAttribute),
+              let sizeValue = readAttribute(element, kAXSizeAttribute),
+              CFGetTypeID(positionValue) == AXValueGetTypeID(), CFGetTypeID(sizeValue) == AXValueGetTypeID() else { return nil }
+        var position = CGPoint.zero
+        var size = CGSize.zero
+        guard AXValueGetValue(positionValue as! AXValue, .cgPoint, &position),
+              AXValueGetValue(sizeValue as! AXValue, .cgSize, &size) else { return nil }
+        return CGRect(origin: position, size: size)
     }
 
     private static func systemAttribute(_ element: AXUIElement, _ name: String) -> CFTypeRef? {
@@ -133,5 +156,45 @@ enum TaskbarWindowActivation {
             AXUIElementPerformAction(element, kAXRaiseAction as CFString)
             AXUIElementSetAttributeValue(application, kAXFocusedWindowAttribute as CFString, element)
         }
+    }
+}
+
+/// The window server supplies Space visibility without requesting Screen Recording.
+/// AX supplies titles even when the window-server title is redacted. Match all
+/// windows before checking visibility so a window on another Space at the same
+/// bounds cannot be mistaken for a visible one.
+struct WindowVisibilitySnapshot {
+    struct Window {
+        let processID: pid_t
+        let title: String?
+        let frame: CGRect
+        let isOnScreen: Bool
+    }
+    let windows: [Window]
+
+    func isOnScreen(processID: pid_t, title: String, frame: CGRect?) -> Bool {
+        guard let frame else { return false }
+        var matches = windows.filter {
+            $0.processID == processID && WindowFitGeometry.approximatelyEqual($0.frame, frame, tolerance: 3)
+        }
+        let titled = matches.filter { $0.title == title }
+        if !titled.isEmpty { matches = titled }
+        // With redacted titles and identical bounds across Spaces, prefer omitting
+        // an ambiguous tile to showing a window from a different desktop.
+        return !matches.isEmpty && matches.allSatisfy(\.isOnScreen)
+    }
+
+    static func current() -> Self {
+        let infos = CGWindowListCopyWindowInfo([.optionAll, .excludeDesktopElements], kCGNullWindowID) as? [[String: Any]] ?? []
+        return Self(windows: infos.compactMap { info in
+            guard let pid = info[kCGWindowOwnerPID as String] as? pid_t,
+                  let layer = info[kCGWindowLayer as String] as? Int, layer == 0,
+                  let alpha = info[kCGWindowAlpha as String] as? Double, alpha > 0,
+                  let bounds = info[kCGWindowBounds as String] as? [String: Any],
+                  let frame = CGRect(dictionaryRepresentation: bounds as CFDictionary),
+                  frame.width > 1, frame.height > 1 else { return nil }
+            return Window(processID: pid, title: info[kCGWindowName as String] as? String,
+                          frame: frame, isOnScreen: info[kCGWindowIsOnscreen as String] as? Bool ?? false)
+        })
     }
 }

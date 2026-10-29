@@ -1,0 +1,171 @@
+<h2>How subtle?</h2>
+<p class="subtitle">Soft glow at three strengths. Each strip: idle, level 1 → 2 → 3, window tile at level 2. Top row 2×, bottom row real size. Click the one you like.</p>
+
+<div style="display:flex;gap:8px;align-items:center;margin:0 0 1rem">
+  <span class="label" style="margin:0">Flames</span>
+  <button class="mock-button" id="behind" style="opacity:1">Behind icon</button>
+  <button class="mock-button" id="front" style="opacity:.45">In front of icon</button>
+</div>
+
+<div class="cards" style="grid-template-columns:1fr">
+  <div class="card" data-choice="subtle" onclick="toggleSelect(this)">
+    <div class="card-image" style="aspect-ratio:auto;display:block;padding:18px;background:#141416"><div class="strip" data-variant="subtle"></div></div>
+    <div class="card-body"><h3>A1 · Subtle</h3><p>Same flames as before, shorter and about half as bright.</p></div>
+  </div>
+  <div class="card" data-choice="quieter" onclick="toggleSelect(this)">
+    <div class="card-image" style="aspect-ratio:auto;display:block;padding:18px;background:#141416"><div class="strip" data-variant="quieter"></div></div>
+    <div class="card-body"><h3>A2 · Quieter</h3><p>Low, slow, dim. Flames only reach the bottom of the icon even at level 3.</p></div>
+  </div>
+  <div class="card" data-choice="ember" onclick="toggleSelect(this)">
+    <div class="card-image" style="aspect-ratio:auto;display:block;padding:18px;background:#141416"><div class="strip" data-variant="ember"></div></div>
+    <div class="card-body"><h3>A3 · Embers</h3><p>Level 1 is only a warm breathing glow at the bottom edge. Small soft flames appear from level 2.</p></div>
+  </div>
+</div>
+
+<style>
+  .strip .row { display:flex; gap:10px; align-items:flex-end; background:#232326; border-radius:10px; padding:8px 10px; width:max-content; max-width:100%; overflow:hidden }
+  .strip .row + .row { margin-top:12px }
+  .strip figure { margin:0; display:flex; flex-direction:column; align-items:center; gap:4px }
+  .strip figcaption { font:11px -apple-system,system-ui,sans-serif; color:#8a8a8f }
+  .strip canvas { display:block }
+</style>
+
+<script>
+(function () {
+  const DPR = window.devicePixelRatio || 1, S = 2;
+  const VARIANTS = {
+    subtle:  { height: [0, 0.26, 0.40, 0.56], alpha: 0.45, rate: l => 5 + l * 4, radius: l => 4 + Math.random() * 3 + l * 0.7, bed: 0.30, speed: 1.0, breathe: 0 },
+    quieter: { height: [0, 0.20, 0.30, 0.42], alpha: 0.32, rate: l => 4 + l * 3, radius: l => 3.5 + Math.random() * 3 + l * 0.5, bed: 0.20, speed: 0.75, breathe: 0 },
+    ember:   { height: [0, 0.14, 0.26, 0.38], alpha: 0.30, rate: l => l < 2 ? 0 : 3 + l * 3, radius: l => 3.5 + Math.random() * 2.5 + l * 0.5, bed: 0.28, speed: 0.7, breathe: 1 },
+  };
+  const LAYOUT = [
+    { kind: 'icon', app: 'arc', level: 0, label: 'idle' },
+    { kind: 'icon', app: 'rider', level: 1, label: 'level 1' },
+    { kind: 'icon', app: 'rider', level: 2, label: 'level 2' },
+    { kind: 'icon', app: 'rider', level: 3, label: 'level 3' },
+    { kind: 'wide', app: 'rider', level: 2, label: 'window tile · level 2' },
+  ];
+  let front = false;
+  const tiles = [];
+
+  function canvas(w, h, scale) {
+    const c = document.createElement('canvas');
+    c.width = Math.round(w * scale * DPR); c.height = Math.round(h * scale * DPR);
+    c.style.width = (w * scale) + 'px'; c.style.height = (h * scale) + 'px';
+    return c;
+  }
+
+  document.querySelectorAll('.strip').forEach(strip => {
+    const big = document.createElement('div'), small = document.createElement('div');
+    big.className = small.className = 'row';
+    strip.append(big, small);
+    for (const spec of LAYOUT) {
+      const w = spec.kind === 'wide' ? 170 : 44, h = 50;
+      const bc = canvas(w, h, S), sc = canvas(w, h, 1);
+      const fig = document.createElement('figure'), cap = document.createElement('figcaption');
+      cap.textContent = spec.label; fig.append(bc, cap); big.append(fig); small.append(sc);
+      tiles.push({ ...spec, v: VARIANTS[strip.dataset.variant], w, h, bc, sc, parts: [], acc: 0, seed: Math.random() * 100 });
+    }
+  });
+
+  document.getElementById('behind').onclick = e => { e.stopPropagation(); front = false; setToggle(); };
+  document.getElementById('front').onclick = e => { e.stopPropagation(); front = true; setToggle(); };
+  function setToggle() {
+    document.getElementById('behind').style.opacity = front ? .45 : 1;
+    document.getElementById('front').style.opacity = front ? 1 : .45;
+  }
+
+  function rr(ctx, x, y, w, h, r) {
+    ctx.beginPath(); ctx.moveTo(x + r, y);
+    ctx.arcTo(x + w, y, x + w, y + h, r); ctx.arcTo(x + w, y + h, x, y + h, r);
+    ctx.arcTo(x, y + h, x, y, r); ctx.arcTo(x, y, x + w, y, r); ctx.closePath();
+  }
+  const lerp = (a, b, k) => a + (b - a) * k;
+  function ramp(stops, v) {
+    if (v <= stops[0][0]) return stops[0][1];
+    for (let i = 1; i < stops.length; i++) if (v <= stops[i][0]) {
+      const [p0, c0] = stops[i - 1], [p1, c1] = stops[i], k = (v - p0) / (p1 - p0);
+      return c0.map((x, j) => lerp(x, c1[j], k));
+    }
+    return stops[stops.length - 1][1];
+  }
+
+  function drawIcon(ctx, app, x, y, s) {
+    ctx.save();
+    rr(ctx, x, y, s, s, s * 0.23);
+    const g = ctx.createLinearGradient(x, y, x + s, y + s);
+    if (app === 'rider') { g.addColorStop(0, '#ff2d8f'); g.addColorStop(.5, '#ff8a1f'); g.addColorStop(1, '#e8f54a'); }
+    else { g.addColorStop(0, '#ff4f6d'); g.addColorStop(1, '#5b5cff'); }
+    ctx.fillStyle = g; ctx.fill();
+    if (app === 'rider') {
+      const i = s * 0.17; ctx.fillStyle = '#000'; ctx.fillRect(x + i, y + i, s - 2 * i, s - 2 * i);
+      ctx.fillStyle = '#fff'; ctx.font = `700 ${s * 0.27}px -apple-system,system-ui,sans-serif`; ctx.textBaseline = 'alphabetic';
+      ctx.fillText('RD', x + i + s * 0.07, y + s * 0.52); ctx.fillRect(x + i + s * 0.07, y + s - i - s * 0.13, s * 0.28, s * 0.05);
+    } else {
+      ctx.fillStyle = '#fff'; ctx.font = `700 ${s * 0.5}px -apple-system,system-ui,sans-serif`;
+      ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText('A', x + s / 2, y + s / 2 + 1);
+    }
+    ctx.restore();
+  }
+
+  function drawChrome(ctx, tile) {
+    if (tile.kind === 'wide') {
+      drawIcon(ctx, tile.app, 10, 9, 32);
+      ctx.fillStyle = '#f2f2f2'; ctx.font = '12px -apple-system,system-ui,sans-serif'; ctx.textBaseline = 'middle'; ctx.textAlign = 'left';
+      ctx.fillText('Program.cs — Rider', 51, 25);
+    } else {
+      drawIcon(ctx, tile.app, 5, 8, 34);
+      ctx.fillStyle = 'rgba(255,255,255,0.4)'; rr(ctx, tile.w / 2 - 2.5, tile.h - 5, 5, 3, 1.5); ctx.fill();
+    }
+  }
+
+  function glow(t, ctx, now, dt) {
+    const { w, h, level, v } = t, H = h * v.height[level];
+    const breathe = v.breathe ? 0.65 + 0.35 * Math.sin(now * 1.8 + t.seed) : 1;
+    const bedH = Math.max(H * 0.6, 7);
+    const bed = ctx.createLinearGradient(0, h, 0, h - bedH);
+    bed.addColorStop(0, `rgba(255,95,25,${v.bed * breathe})`); bed.addColorStop(1, 'rgba(255,95,25,0)');
+    ctx.fillStyle = bed; ctx.fillRect(0, h - bedH, w, bedH);
+    t.acc += v.rate(level) * (w / 44) * dt;
+    while (t.acc >= 1) {
+      t.acc--;
+      const life = (0.6 + Math.random() * 0.5) / v.speed;
+      t.parts.push({ x: Math.random() * w, y: h + 3, r: v.radius(level), life, age: 0, seed: Math.random() * 6.28, vy: H * 0.95 / life });
+    }
+    ctx.globalCompositeOperation = 'lighter';
+    for (const p of t.parts) {
+      p.age += dt; const k = p.age / p.life; if (k >= 1) continue;
+      p.y -= p.vy * dt; p.x += Math.sin(now * 3 + p.seed) * 6 * dt;
+      const r = p.r * (1 - k * 0.6);
+      const c = ramp([[0, [255, 225, 130]], [0.35, [255, 145, 35]], [1, [220, 40, 20]]], k);
+      const a = v.alpha * Math.pow(1 - k, 0.8);
+      const rg = ctx.createRadialGradient(p.x, p.y, 0, p.x, p.y, r);
+      rg.addColorStop(0, `rgba(${c[0]|0},${c[1]|0},${c[2]|0},${a})`); rg.addColorStop(1, `rgba(${c[0]|0},${c[1]|0},${c[2]|0},0)`);
+      ctx.fillStyle = rg; ctx.fillRect(p.x - r, p.y - r, r * 2, r * 2);
+    }
+    t.parts = t.parts.filter(p => p.age < p.life);
+    ctx.globalCompositeOperation = 'source-over';
+  }
+
+  let last = performance.now();
+  function frame(ms) {
+    const now = ms / 1000, dt = Math.min(0.05, (ms - last) / 1000); last = ms;
+    for (const t of tiles) {
+      const ctx = t.bc.getContext('2d');
+      ctx.setTransform(S * DPR, 0, 0, S * DPR, 0, 0);
+      ctx.clearRect(0, 0, t.w, t.h);
+      ctx.save(); rr(ctx, 0, 0, t.w, t.h, 7); ctx.clip();
+      if (t.kind === 'wide') { ctx.fillStyle = 'rgba(255,255,255,0.035)'; ctx.fillRect(0, 0, t.w, t.h); }
+      if (!front && t.level) glow(t, ctx, now, dt);
+      ctx.restore();
+      drawChrome(ctx, t);
+      if (front && t.level) { ctx.save(); rr(ctx, 0, 0, t.w, t.h, 7); ctx.clip(); glow(t, ctx, now, dt); ctx.restore(); }
+      const sctx = t.sc.getContext('2d');
+      sctx.setTransform(1, 0, 0, 1, 0, 0); sctx.clearRect(0, 0, t.sc.width, t.sc.height);
+      sctx.imageSmoothingQuality = 'high'; sctx.drawImage(t.bc, 0, 0, t.sc.width, t.sc.height);
+    }
+    requestAnimationFrame(frame);
+  }
+  requestAnimationFrame(frame);
+})();
+</script>

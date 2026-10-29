@@ -13,6 +13,7 @@ struct TaskbarView: View {
     @ObservedObject var windowTiles: TaskbarWindowStore
     @ObservedObject var windowGroups: WindowGroupStore
     @ObservedObject var music: AppleMusicStore
+    let displayID: CGDirectDisplayID
     @Environment(\.colorScheme) private var colorScheme
     @State private var windowTileOrder = TaskbarTileOrder()
     @State private var draggedTileID: String?
@@ -24,7 +25,9 @@ struct TaskbarView: View {
         GeometryReader { geometry in
             let sideWidth = preferences.trayWidth(hasBattery: battery.state != nil) + 15
             let apps = preferences.orderedTaskbarApps(applications.pinnedApps + applications.unpinnedRunningApps)
-            let baseTiles = TaskbarTile.make(apps: apps, windows: windowTiles.windows, mode: preferences.taskbarMode, separateMultipleWindows: preferences.separateMultipleWindows)
+            let baseTiles = TaskbarTile.make(apps: apps, windows: windowTiles.windows, mode: preferences.taskbarMode, separateMultipleWindows: preferences.separateMultipleWindows,
+                display: windowTiles.hasWindowAccess && preferences.usesWindowTiles ? controller.displays.first { $0.id == displayID }?.windowFrame : nil,
+                pinnedIDs: Set(preferences.pinnedIDs))
             let arrangedTiles = preferences.usesWindowTiles ? windowTileOrder.ordered(baseTiles) : baseTiles
             let orderedTiles = dragOrder?.ordered(arrangedTiles) ?? arrangedTiles
             let tiles = groupedTogether(orderedTiles)
@@ -56,13 +59,13 @@ struct TaskbarView: View {
                 .padding(.horizontal, 12)
                 HStack(spacing: 4) {
                     if preferences.shows(.start) {
-                        Button { controller.toggle(.start) } label: {
+                        Button { controller.toggle(.start, on: displayID) } label: {
                             HStack(spacing: 7) {
                                 StartGlyph(size: 17)
                                 Text("Start").font(.system(size: 12, weight: .medium))
                             }.frame(width: 74, height: 40)
                         }
-                        .buttonStyle(TileButtonStyle(selected: controller.popup == .start))
+                        .buttonStyle(TileButtonStyle(selected: controller.isPopup(.start, on: displayID)))
                         .overlay { TileHoverGlow(hovered: startHovered) }
                         .background(AppIconHoverAnchor(resolved: { _ in }, hoverChanged: { inside, _ in startHovered = inside }))
                         .animation(.easeOut(duration: 0.14), value: startHovered)
@@ -71,7 +74,7 @@ struct TaskbarView: View {
                         .accessibilityIdentifier("taskbar.start")
                     }
                     if preferences.shows(.search) {
-                    Button { controller.toggle(.launcher) } label: {
+                    Button { controller.toggle(.launcher, on: displayID) } label: {
                         HStack(spacing: 9) {
                             Image(systemName: "magnifyingglass").font(.system(size: 14, weight: .medium))
                             if layout.showsSearchLabel { Text("Search").font(.system(size: 12)).foregroundStyle(.secondary) }
@@ -103,12 +106,12 @@ struct TaskbarView: View {
                         HStack(spacing: 0) {
                             ForEach(Array(item.tiles.enumerated()), id: \.element.id) { memberIndex, tile in
                                 TaskbarAppButton(tile: tile, width: tile.special == nil ? layout.memberWidths[index][memberIndex] : 44,
-                                                 applications: applications, preferences: preferences,
+                                                 applications: applications, preferences: preferences, cpu: cpu,
                                                  artwork: tile.special == .appleMusic && music.playing == true ? music.artwork : nil,
                                                  grouped: item.isGroup, groupActive: groupActive,
                                                  ungroup: { if let group = windowGroups.group(for: tile) { windowGroups.ungroup(group) } },
                                                  canMoveLeft: index > 0, canMoveRight: index < items.count - 1,
-                                                 hover: { inside, frame in controller.hoverApplication(tile.app, inside: inside, frame: frame) },
+                                                 hover: { inside, frame in controller.hoverApplication(tile.app, inside: inside, frame: frame, on: displayID) },
                                                  dragChanged: { point, translation, frame in
                                                      if draggedTileID == nil {
                                                          guard let frame else { return }
@@ -139,7 +142,7 @@ struct TaskbarView: View {
                                                      }
                                                  },
                                                  moveBy: { offset in move(item.id, relativeTo: items[index + offset].id, after: offset > 0, items: items) },
-                                                 action: { controller.activate(tile) })
+                                                 action: { controller.activate(tile, on: displayID) })
                                 if tile.special == .appleMusic {
                                     MusicTileControls(music: music, running: applications.isRunning(tile.app.id))
                                 }
@@ -185,7 +188,7 @@ struct TaskbarView: View {
                         Menu {
                             ForEach(Array(items.dropFirst(layout.capacity))) { item in
                                 ForEach(item.tiles) { tile in
-                                    Button { controller.activate(tile) } label: { Label { Text(tile.title) } icon: { Image(nsImage: tile.app.icon) } }
+                                    Button { controller.activate(tile, on: displayID) } label: { Label { Text(tile.title) } icon: { Image(nsImage: tile.app.icon) } }
                                     if tile.special == .appleMusic {
                                         Button("Previous track") { music.perform(.previous) }.disabled(!applications.isRunning(tile.app.id))
                                         Button(music.playbackTitle) { music.perform(.playPause) }.disabled(!applications.isRunning(tile.app.id))
@@ -287,7 +290,7 @@ struct TaskbarView: View {
 
     private var tray: some View {
         TaskbarTrayView(controller: controller, preferences: preferences, audio: audio, battery: battery, cpu: cpu,
-                        wifi: wifi, keyboard: keyboard, aiLimits: aiLimits)
+                        wifi: wifi, keyboard: keyboard, aiLimits: aiLimits, displayID: displayID)
     }
 }
 
@@ -296,6 +299,7 @@ private struct TaskbarAppButton: View {
     let width: CGFloat
     @ObservedObject var applications: ApplicationStore
     @ObservedObject var preferences: Preferences
+    @ObservedObject var cpu: CPUStore
     let artwork: NSImage?
     let grouped: Bool
     let groupActive: Bool
@@ -308,6 +312,7 @@ private struct TaskbarAppButton: View {
     let moveBy: (Int) -> Void
     let action: () -> Void
     @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var hovered = false
     @State private var anchorView: NSView?
     @State private var suppressClick = false
@@ -317,6 +322,11 @@ private struct TaskbarAppButton: View {
     private var compressed: Bool { width < 88 }
     private var active: Bool {
         applications.activeID == item.id && (tile.window?.isFocused ?? true)
+    }
+    private var heatLevel: Int { tile.special == nil ? cpu.appHeatLevels[item.id, default: 0] : 0 }
+    private var accessibilityStatus: String {
+        let status = grouped ? "Grouped" : active ? "Active" : tile.window?.isMinimized == true ? "Minimized" : applications.isRunning(item.id) ? "Running" : "Pinned"
+        return heatLevel > 0 ? "\(status), high CPU use" : status
     }
     var body: some View {
         Button { if !suppressClick { action() } } label: {
@@ -350,6 +360,7 @@ private struct TaskbarAppButton: View {
                     }
                 }
             }
+            .background { AppTileFireEffect(level: heatLevel, reduceMotion: reduceMotion, dark: colorScheme == .dark) }
         }
         .buttonStyle(TileButtonStyle(selected: active && !grouped, showsBackground: !grouped))
         .overlay { TileHoverGlow(hovered: hovered) }
@@ -372,9 +383,9 @@ private struct TaskbarAppButton: View {
             })
         .animation(.easeOut(duration: 0.14), value: hovered)
         .animation(.easeOut(duration: 0.16), value: active)
-        .help(tile.window == nil ? item.name : "\(tile.title) · \(item.name)")
+        .help((tile.window == nil ? item.name : "\(tile.title) · \(item.name)") + (heatLevel > 0 ? " · High CPU use" : ""))
         .accessibilityLabel(tile.window == nil ? item.name : "\(tile.title), \(item.name)")
-        .accessibilityValue(grouped ? "Grouped" : active ? "Active" : tile.window?.isMinimized == true ? "Minimized" : applications.isRunning(item.id) ? "Running" : "Pinned")
+        .accessibilityValue(accessibilityStatus)
         .contextMenu {
             if grouped { Button("Ungroup windows", action: ungroup); Divider() }
             ApplicationContextMenu(item: item, applications: applications, preferences: preferences, window: tile.window, open: action)
@@ -387,6 +398,137 @@ private struct TaskbarAppButton: View {
         Capsule().fill(active && !grouped ? Color.accentColor : Color.primary.opacity(0.40))
             .frame(width: active && !grouped ? 17 : 5, height: 3)
             .opacity(applications.isRunning(item.id) && !(grouped && groupActive) ? 1 : 0)
+    }
+}
+
+/// Subtle soft-glow flame tuning for each CPU heat level.
+struct TileFlame: Equatable {
+    /// Fraction of the tile height the flames rise to.
+    let height: CGFloat
+    /// Particles per second for each 44 points of tile width.
+    let birthRate: Float
+    let particleRadius: CGFloat
+    let peakOpacity: Float
+    let bedOpacity: Double
+
+    init?(level: Int) {
+        guard level > 0 else { return nil }
+        let level = min(level, 3)
+        height = [0.26, 0.40, 0.56][level - 1]
+        birthRate = Float(5 + level * 4)
+        particleRadius = 5.5 + CGFloat(level) * 0.7
+        peakOpacity = 0.45
+        bedOpacity = 0.30
+    }
+}
+
+/// Soft flames rising behind a busy app's icon. Core Animation runs the particles in the
+/// render server, so a burning tile costs Macbar no per-frame work.
+private struct AppTileFireEffect: View {
+    let level: Int
+    let reduceMotion: Bool
+    let dark: Bool
+
+    var body: some View {
+        if let flame = TileFlame(level: level) {
+            GeometryReader { proxy in
+                ZStack(alignment: .bottom) {
+                    LinearGradient(colors: [Color(red: 1, green: 0.37, blue: 0.1).opacity(flame.bedOpacity), .clear],
+                                   startPoint: .bottom, endPoint: .top)
+                        .frame(height: max(proxy.size.height * flame.height * 0.6, 7))
+                    if !reduceMotion { FlameEmitter(flame: flame, additive: dark) }
+                }
+                .frame(width: proxy.size.width, height: proxy.size.height, alignment: .bottom)
+            }
+            .clipShape(RoundedRectangle(cornerRadius: 7))
+            .allowsHitTesting(false)
+            .accessibilityHidden(true)
+        }
+    }
+}
+
+private struct FlameEmitter: NSViewRepresentable {
+    let flame: TileFlame
+    let additive: Bool
+
+    func makeNSView(context: Context) -> FlameEmitterView { FlameEmitterView() }
+
+    func updateNSView(_ view: FlameEmitterView, context: Context) {
+        view.configure(flame: flame, additive: additive)
+    }
+}
+
+private final class FlameEmitterView: NSView {
+    private static let particleSize: CGFloat = 16
+    private static let particle: CGImage? = {
+        let pixels = Int(particleSize * 2)
+        guard let context = CGContext(data: nil, width: pixels, height: pixels, bitsPerComponent: 8, bytesPerRow: 0,
+                                      space: CGColorSpaceCreateDeviceRGB(), bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue),
+              let gradient = CGGradient(colorsSpace: CGColorSpaceCreateDeviceRGB(),
+                                        colors: [CGColor(gray: 1, alpha: 1), CGColor(gray: 1, alpha: 0)] as CFArray,
+                                        locations: [0, 1]) else { return nil }
+        let center = CGPoint(x: pixels / 2, y: pixels / 2)
+        context.drawRadialGradient(gradient, startCenter: center, startRadius: 0, endCenter: center,
+                                   endRadius: CGFloat(pixels) / 2, options: [])
+        return context.makeImage()
+    }()
+
+    private let emitter = CAEmitterLayer()
+    private var flame: TileFlame?
+    private var builtFor: (flame: TileFlame, size: CGSize, flipped: Bool)?
+
+    override init(frame: NSRect) {
+        super.init(frame: frame)
+        wantsLayer = true
+        emitter.emitterShape = .line
+        layer?.addSublayer(emitter)
+    }
+
+    required init?(coder: NSCoder) { nil }
+
+    override func hitTest(_ point: NSPoint) -> NSView? { nil }
+
+    func configure(flame: TileFlame, additive: Bool) {
+        emitter.renderMode = additive ? .additive : .unordered
+        self.flame = flame
+        needsLayout = true
+    }
+
+    override func layout() {
+        super.layout()
+        // Hosting views can flip layer geometry, so find which way is up before emitting.
+        let flipped = emitter.contentsAreFlipped()
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        emitter.frame = bounds
+        emitter.emitterPosition = CGPoint(x: bounds.midX, y: flipped ? bounds.maxY + 2 : -2)
+        emitter.emitterSize = CGSize(width: bounds.width, height: 0)
+        CATransaction.commit()
+        guard let flame, bounds.width > 0, bounds.height > 0 else { return }
+        if let builtFor, builtFor.flame == flame, builtFor.size == bounds.size, builtFor.flipped == flipped { return }
+        builtFor = (flame, bounds.size, flipped)
+
+        // Particles start yellow and cool to red as they rise and fade.
+        let lifetime: Float = 0.85
+        let cell = CAEmitterCell()
+        cell.contents = Self.particle
+        cell.contentsScale = 2
+        cell.birthRate = flame.birthRate * Float(bounds.width / 44)
+        cell.lifetime = lifetime
+        cell.lifetimeRange = 0.25
+        cell.velocity = bounds.height * flame.height * 0.95 / CGFloat(lifetime)
+        cell.velocityRange = cell.velocity * 0.2
+        cell.emissionLongitude = flipped ? -.pi / 2 : .pi / 2
+        cell.emissionRange = 0.25
+        cell.scale = flame.particleRadius * 2 / Self.particleSize
+        cell.scaleRange = cell.scale * 0.2
+        cell.scaleSpeed = -cell.scale * 0.6 / CGFloat(lifetime)
+        cell.color = CGColor(red: 1, green: 0.88, blue: 0.51, alpha: CGFloat(flame.peakOpacity))
+        cell.redSpeed = -0.16 / lifetime
+        cell.greenSpeed = -0.85 / lifetime
+        cell.blueSpeed = -0.5 / lifetime
+        cell.alphaSpeed = -flame.peakOpacity / lifetime
+        emitter.emitterCells = [cell]
     }
 }
 

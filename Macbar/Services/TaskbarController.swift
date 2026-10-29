@@ -55,9 +55,12 @@ final class TaskbarController: NSObject, ObservableObject {
     @Published private(set) var popup: Popup?
     @Published private(set) var isVisible = true
     private var manuallyVisible = true
-    private var fullScreenCovered = false
+    @Published private(set) var displays: [TaskbarDisplay] = []
+    @Published private(set) var visibleDisplayIDs = Set<CGDirectDisplayID>()
+    @Published private(set) var popupDisplayID: CGDirectDisplayID?
+    private var coveredDisplayIDs = Set<CGDirectDisplayID>()
 
-    private var bar: BarPanel?
+    private var bars: [CGDirectDisplayID: BarPanel] = [:]
     private var flyout: FlyoutPanel?
     private var startHeight: CGFloat = 800
     private var statusItem: NSStatusItem?
@@ -66,6 +69,7 @@ final class TaskbarController: NSObject, ObservableObject {
     private var globalFlagsMonitor: Any?
     private var previewPanel: BarPanel?
     private var previewItem: ApplicationItem?
+    private var previewDisplayID: CGDirectDisplayID?
     private var previewAnchor = CGRect.zero
     private var hoveredAppID: String?
     private var pendingPreview: Task<Void, Never>?
@@ -88,26 +92,14 @@ final class TaskbarController: NSObject, ObservableObject {
         preferences.$hideDockWhileRunning.dropFirst().sink { [weak self] hidden in
             self?.dockVisibility.setHidden(hidden)
         }.store(in: &cancellables)
-        let panel = BarPanel(contentRect: .zero, styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
-        panel.level = .statusBar
-        panel.collectionBehavior = [.canJoinAllSpaces, .stationary, .ignoresCycle]
-        panel.isOpaque = false
-        panel.backgroundColor = .clear
-        panel.hasShadow = false
-        panel.hidesOnDeactivate = false
-        panel.isMovable = false
-        panel.contentView = TaskbarHostingView(rootView: TaskbarView(controller: self, applications: applications, preferences: preferences, audio: audio, battery: battery, cpu: cpu, wifi: wifi, keyboard: keyboard, aiLimits: aiLimits, windowTiles: windowTiles, windowGroups: windowGroups, music: music))
-        bar = panel
-        fullScreenCovered = FullScreenDetection.isMainDisplayCovered()
-        isVisible = manuallyVisible && !fullScreenCovered
+        reconcileDisplays()
         applyPreferences()
-        if isVisible { panel.orderFrontRegardless() }
 
         preferences.objectWillChange.sink { [weak self] _ in
             DispatchQueue.main.async { self?.applyPreferences() }
         }.store(in: &cancellables)
         NotificationCenter.default.publisher(for: NSApplication.didChangeScreenParametersNotification)
-            .sink { [weak self] _ in self?.dismissPreviews(); self?.positionWindows(); self?.refreshFullScreenVisibility() }.store(in: &cancellables)
+            .sink { [weak self] _ in self?.dismissPopup(); self?.endTileDrag(); self?.reconcileDisplays() }.store(in: &cancellables)
         previews.$windows.sink { [weak self] _ in
             DispatchQueue.main.async { self?.updatePreviewPanel() }
         }.store(in: &cancellables)
@@ -121,7 +113,7 @@ final class TaskbarController: NSObject, ObservableObject {
             self.dismissPreviews()
         }.store(in: &cancellables)
         NSWorkspace.shared.notificationCenter.publisher(for: NSWorkspace.activeSpaceDidChangeNotification)
-            .sink { [weak self] _ in self?.dismissPopup(); self?.refreshWindowTiles(); self?.refreshFullScreenVisibility() }.store(in: &cancellables)
+            .sink { [weak self] _ in self?.dismissPopup(); self?.windowTiles.clear(); self?.refreshFullScreenVisibility(); self?.refreshWindowTiles() }.store(in: &cancellables)
 
         windowTilesTimer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in
             Task { @MainActor in self?.refreshFullScreenVisibility(); self?.refreshWindowTiles(); self?.windowGroups.validateWindows() }
@@ -145,7 +137,7 @@ final class TaskbarController: NSObject, ObservableObject {
             }
             if event.type == .keyDown && event.keyCode == 53 { self.dismissPopup(); return nil }
             if event.type != .keyDown && event.window !== self.previewPanel { self.dismissPreviews() }
-            if event.type != .keyDown && event.window !== self.flyout && event.window !== self.bar {
+            if event.type != .keyDown && event.window !== self.flyout && !self.bars.values.contains(where: { $0 === event.window }) {
                 if event.window !== self.previewPanel { self.dismissPopup() }
             }
             return event
@@ -156,14 +148,53 @@ final class TaskbarController: NSObject, ObservableObject {
 
     func restoreDock() { dockVisibility.setHidden(false) }
 
-    var screen: NSScreen? {
-        // The display with the menu bar is first, even when another app has focus.
-        NSScreen.screens.first
+    private func reconcileDisplays() {
+        let next = NSScreen.screens.map(TaskbarDisplay.init)
+        let ids = Set(next.map(\.id))
+        for id in bars.keys.filter({ !ids.contains($0) }) {
+            bars.removeValue(forKey: id)?.close()
+        }
+        displays = next
+        for display in next where bars[display.id] == nil {
+            let panel = BarPanel(contentRect: .zero, styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
+            panel.level = .statusBar
+            panel.collectionBehavior = [.canJoinAllSpaces, .stationary, .ignoresCycle]
+            panel.isOpaque = false
+            panel.backgroundColor = .clear
+            panel.hasShadow = false
+            panel.hidesOnDeactivate = false
+            panel.isMovable = false
+            panel.appearance = preferences.appearance.nsAppearance
+            panel.contentView = TaskbarHostingView(rootView: TaskbarView(controller: self, applications: applications,
+                preferences: preferences, audio: audio, battery: battery, cpu: cpu, wifi: wifi, keyboard: keyboard,
+                aiLimits: aiLimits, windowTiles: windowTiles, windowGroups: windowGroups, music: music, displayID: display.id))
+            bars[display.id] = panel
+        }
+        positionWindows()
+        refreshFullScreenVisibility()
+        updateVisibility()
+        refreshWindowTiles()
     }
 
-    func toggle(_ requested: Popup) {
-        if popup == requested { dismissPopup(); return }
+    private func screen(on displayID: CGDirectDisplayID?) -> NSScreen? {
+        NSScreen.screens.first { $0.displayID == displayID }
+    }
+
+    private var interactionDisplayID: CGDirectDisplayID? {
+        NSApp.currentEvent?.window?.screen?.displayID ??
+            NSScreen.screens.first { $0.frame.contains(NSEvent.mouseLocation) }?.displayID ?? displays.first?.id
+    }
+
+    func isPopup(_ requested: Popup, on displayID: CGDirectDisplayID) -> Bool {
+        popup == requested && popupDisplayID == displayID
+    }
+
+    func toggle(_ requested: Popup, on displayID: CGDirectDisplayID? = nil) {
+        let sourceID = displayID ?? popupDisplayID ?? interactionDisplayID
+        guard let sourceID, visibleDisplayIDs.contains(sourceID) else { return }
+        if popup == requested && popupDisplayID == sourceID { dismissPopup(); return }
         dismissPopup()
+        popupDisplayID = sourceID
         popup = requested
         let panel = FlyoutPanel(contentRect: .zero, styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
         panel.level = NSWindow.Level(rawValue: NSWindow.Level.statusBar.rawValue + 1)
@@ -212,36 +243,39 @@ final class TaskbarController: NSObject, ObservableObject {
         flyout?.orderOut(nil)
         flyout = nil
         popup = nil
+        popupDisplayID = nil
     }
 
-    func hoverApplication(_ item: ApplicationItem, inside: Bool, frame: CGRect) {
+    func hoverApplication(_ item: ApplicationItem, inside: Bool, frame: CGRect, on displayID: CGDirectDisplayID) {
         if !inside {
-            if hoveredAppID == item.id {
+            if hoveredAppID == item.id && previewDisplayID == displayID {
                 hoveredAppID = nil
                 pendingPreview?.cancel()
                 pendingPreview = nil
             }
             return
         }
-        guard isVisible, popup == nil, applications.isRunning(item.id), NSEvent.pressedMouseButtons == 0 else { return }
-        if previewItem?.id == item.id {
+        guard visibleDisplayIDs.contains(displayID), popup == nil, applications.isRunning(item.id), NSEvent.pressedMouseButtons == 0 else { return }
+        if previewItem?.id == item.id && previewDisplayID == displayID {
             hoveredAppID = item.id
             previewAnchor = frame
             return
         }
         dismissPreviews()
         hoveredAppID = item.id
+        previewDisplayID = displayID
         previewAnchor = frame
         pendingPreview = Task { [weak self] in
             do { try await Task.sleep(for: .milliseconds(250)) } catch { return }
             guard let self, self.hoveredAppID == item.id, self.popup == nil,
-                  self.applications.isRunning(item.id), self.isVisible,
+                  self.applications.isRunning(item.id), self.visibleDisplayIDs.contains(displayID),
                   self.previewAnchor.contains(NSEvent.mouseLocation), NSEvent.pressedMouseButtons == 0 else { return }
             self.showPreviews(for: item)
         }
     }
 
     private func showPreviews(for item: ApplicationItem) {
+        guard let display = displays.first(where: { $0.id == previewDisplayID }) else { return }
         let panel = BarPanel(contentRect: .zero, styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
         panel.level = NSWindow.Level(rawValue: NSWindow.Level.statusBar.rawValue + 1)
         panel.collectionBehavior = [.canJoinAllSpaces, .ignoresCycle, .transient]
@@ -256,7 +290,7 @@ final class TaskbarController: NSObject, ObservableObject {
         })
         previewItem = item
         previewPanel = panel
-        previews.show(item)
+        previews.show(item, on: display.windowFrame)
         updatePreviewPanel()
         previewTracking = Timer.scheduledTimer(withTimeInterval: 0.1, repeats: true) { [weak self] _ in
             Task { @MainActor in self?.trackPreviewPointer() }
@@ -274,7 +308,7 @@ final class TaskbarController: NSObject, ObservableObject {
     }
 
     private func updatePreviewPanel() {
-        guard let screen, let bar, let panel = previewPanel else { return }
+        guard let screen = screen(on: previewDisplayID), let id = previewDisplayID, let bar = bars[id], let panel = previewPanel else { return }
         guard previews.state != .idle && previews.state != .loading else {
             panel.orderOut(nil)
             return
@@ -298,6 +332,7 @@ final class TaskbarController: NSObject, ObservableObject {
         previewPanel?.orderOut(nil)
         previewPanel = nil
         previewItem = nil
+        previewDisplayID = nil
         previews.cancel()
     }
 
@@ -306,10 +341,10 @@ final class TaskbarController: NSObject, ObservableObject {
         applications.activate(item)
     }
 
-    func activate(_ tile: TaskbarTile) {
+    func activate(_ tile: TaskbarTile, on displayID: CGDirectDisplayID) {
         dismissPopup()
-        if CGEventSource.keyState(.combinedSessionState, key: 55), let screen {
-            windowGroups.click(tile, screen: screen, taskbar: isVisible ? bar?.frame : nil, applications: applications)
+        if CGEventSource.keyState(.combinedSessionState, key: 55), let screen = screen(on: displayID) {
+            windowGroups.click(tile, screen: screen, taskbar: visibleDisplayIDs.contains(displayID) ? bars[displayID]?.frame : nil, applications: applications)
         } else if let group = windowGroups.group(for: tile) {
             windowGroups.activate(group)
         } else {
@@ -319,7 +354,8 @@ final class TaskbarController: NSObject, ObservableObject {
 
     func beginTileDrag(frame: CGRect, translation: CGSize, sourceWindow: NSWindow? = nil) {
         endTileDrag()
-        guard let window = sourceWindow ?? bar, let content = window.contentView else { return }
+        let sourceID = displays.first { $0.frame.contains(CGPoint(x: frame.midX, y: frame.midY)) }?.id
+        guard let window = sourceWindow ?? sourceID.flatMap({ bars[$0] }), let content = window.contentView else { return }
         let rect = content.convert(window.convertFromScreen(frame), from: nil)
         guard let bitmap = content.bitmapImageRepForCachingDisplay(in: rect) else { return }
         content.cacheDisplay(in: rect, to: bitmap)
@@ -454,7 +490,7 @@ final class TaskbarController: NSObject, ObservableObject {
     private func applyPreferences() {
         dismissPreviews()
         aiLimits.setEnabled(isVisible && preferences.shows(.aiLimits))
-        cpu.setEnabled(isVisible && preferences.shows(.cpu))
+        cpu.setEnabled(isVisible, showSystem: preferences.shows(.cpu))
         let popupControl: TaskbarControl?
         switch popup {
         case .start: popupControl = .start
@@ -469,7 +505,7 @@ final class TaskbarController: NSObject, ObservableObject {
         }
         if let popupControl, !preferences.shows(popupControl) { dismissPopup() }
         refreshWindowTiles()
-        bar?.appearance = preferences.appearance.nsAppearance
+        for bar in bars.values { bar.appearance = preferences.appearance.nsAppearance }
         flyout?.appearance = preferences.appearance.nsAppearance
         positionWindows()
     }
@@ -483,10 +519,11 @@ final class TaskbarController: NSObject, ObservableObject {
     }
 
     private func positionWindows() {
-        guard let screen else { return }
-        bar?.setFrame(BarGeometry.frame(on: screen.frame, height: preferences.barHeight), display: true)
-        windowManagement.updateTaskbar(frame: isVisible ? bar?.frame : nil)
-        if let popup {
+        for display in displays {
+            bars[display.id]?.setFrame(BarGeometry.frame(on: display.frame, height: preferences.barHeight), display: true)
+        }
+        updateWindowManagement()
+        if let popup, let screen = screen(on: popupDisplayID) {
             let size: CGSize
             switch popup {
             case .start: size = CGSize(width: 600, height: startHeight)
@@ -537,23 +574,44 @@ final class TaskbarController: NSObject, ObservableObject {
     }
 
     private func refreshFullScreenVisibility() {
-        let covered = FullScreenDetection.isMainDisplayCovered()
-        guard covered != fullScreenCovered else { return }
-        fullScreenCovered = covered
+        let frames = FullScreenDetection.visibleWindowFrames()
+        let covered = Set(displays.filter {
+            FullScreenDetection.isCovered(display: $0.windowFrame, windows: frames)
+        }.map(\.id))
+        guard covered != coveredDisplayIDs else { return }
+        coveredDisplayIDs = covered
         updateVisibility()
     }
 
     private func updateVisibility() {
-        let visible = manuallyVisible && !fullScreenCovered
-        guard visible != isVisible else { return }
-        endTileDrag()
-        dismissPopup()
-        isVisible = visible
+        let visible = manuallyVisible ? Set(displays.map(\.id)).subtracting(coveredDisplayIDs) : []
+        if visible != visibleDisplayIDs {
+            endTileDrag()
+            if let id = popupDisplayID, !visible.contains(id) { dismissPopup() }
+            if let id = previewDisplayID, !visible.contains(id) { dismissPreviews() }
+            visibleDisplayIDs = visible
+        }
+        isVisible = !visible.isEmpty
         aiLimits.setEnabled(isVisible && preferences.shows(.aiLimits))
-        cpu.setEnabled(isVisible && preferences.shows(.cpu))
+        cpu.setEnabled(isVisible, showSystem: preferences.shows(.cpu))
+        for (id, bar) in bars {
+            if visible.contains(id) {
+                if !bar.isVisible { bar.orderFrontRegardless() }
+            } else if bar.isVisible { bar.orderOut(nil) }
+        }
+        updateWindowManagement()
         refreshWindowTiles()
-        if isVisible { bar?.orderFrontRegardless() } else { bar?.orderOut(nil) }
-        windowManagement.updateTaskbar(frame: isVisible ? bar?.frame : nil)
+    }
+
+    private func updateWindowManagement() {
+        windowManagement.updateTaskbars(contexts: displays.compactMap { display in
+            guard visibleDisplayIDs.contains(display.id), let bar = bars[display.id] else { return nil }
+            return WindowFitContext(screen: display.windowFrame,
+                workArea: WindowFitGeometry.accessibilityFrame(from: display.visibleFrame,
+                    primaryScreenTop: NSScreen.screens.first?.frame.maxY ?? 0),
+                taskbar: WindowFitGeometry.accessibilityFrame(from: bar.frame,
+                    primaryScreenTop: NSScreen.screens.first?.frame.maxY ?? 0))
+        })
     }
     @objc private func quit() { NSApp.terminate(nil) }
 }

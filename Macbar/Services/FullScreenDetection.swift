@@ -22,11 +22,15 @@ enum FullScreenDetection {
     }
 
     static func isMainDisplayCovered() -> Bool {
+        isCovered(display: CGDisplayBounds(CGMainDisplayID()), windows: visibleWindowFrames())
+    }
+
+    static func visibleWindowFrames() -> [CGRect] {
         guard let windows = CGWindowListCopyWindowInfo([.optionOnScreenOnly, .excludeDesktopElements], kCGNullWindowID) as? [[String: Any]] else {
-            return false
+            return []
         }
         let ownPID = ProcessInfo.processInfo.processIdentifier
-        let frames = windows.compactMap { info -> CGRect? in
+        return windows.compactMap { info -> CGRect? in
             guard let pid = info[kCGWindowOwnerPID as String] as? pid_t, pid != ownPID,
                   let layer = info[kCGWindowLayer as String] as? Int, layer >= 0,
                   let alpha = info[kCGWindowAlpha as String] as? Double, alpha > 0,
@@ -35,6 +39,5 @@ enum FullScreenDetection {
                   let frame = CGRect(dictionaryRepresentation: bounds as CFDictionary) else { return nil }
             return frame
         }
-        return isCovered(display: CGDisplayBounds(CGMainDisplayID()), windows: frames)
     }
 }

@@ -15,6 +15,14 @@ struct WindowAdjustment {
 }
 
 enum WindowFitGeometry {
+    static func context(for window: CGRect, in contexts: [WindowFitContext]) -> WindowFitContext? {
+        contexts.filter { window.intersects($0.screen) }.max {
+            let left = window.intersection($0.screen)
+            let right = window.intersection($1.screen)
+            return left.width * left.height < right.width * right.height
+        }
+    }
+
     static func accessibilityFrame(from appKitFrame: CGRect, primaryScreenTop: CGFloat) -> CGRect {
         CGRect(x: appKitFrame.minX, y: primaryScreenTop - appKitFrame.maxY,
                width: appKitFrame.width, height: appKitFrame.height)

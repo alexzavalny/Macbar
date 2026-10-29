@@ -10,7 +10,7 @@ final class WindowManagementStore: ObservableObject {
     private let worker = WindowFitWorker()
     private var timer: Timer?
     private var observations = Set<AnyCancellable>()
-    private var taskbarFrame: CGRect?
+    private var contexts: [WindowFitContext] = []
 
     init(preferences: Preferences) { self.preferences = preferences }
 
@@ -35,8 +35,9 @@ final class WindowManagementStore: ObservableObject {
 
     deinit { timer?.invalidate() }
 
-    func updateTaskbar(frame: CGRect?) {
-        taskbarFrame = frame
+    func updateTaskbars(contexts: [WindowFitContext]) {
+        guard self.contexts != contexts else { return }
+        self.contexts = contexts
         refresh()
     }
 
@@ -51,20 +52,14 @@ final class WindowManagementStore: ObservableObject {
     private func refresh() {
         let trusted = AXIsProcessTrusted()
         if trusted != hasAccessibilityAccess { hasAccessibilityAccess = trusted }
-        guard preferences.keepWindowsAboveTaskbar, trusted, let taskbarFrame,
-              let screen = NSScreen.screens.first,
+        guard preferences.keepWindowsAboveTaskbar, trusted, !contexts.isEmpty,
               let app = NSWorkspace.shared.frontmostApplication,
               app.activationPolicy == .regular, app.processIdentifier != ProcessInfo.processInfo.processIdentifier else {
-            worker.configure(processID: nil, context: nil,
-                             forgetAdjustments: !preferences.keepWindowsAboveTaskbar || !trusted || taskbarFrame == nil)
+            worker.configure(processID: nil, contexts: [],
+                             forgetAdjustments: !preferences.keepWindowsAboveTaskbar || !trusted || contexts.isEmpty)
             return
         }
-        let primaryTop = screen.frame.maxY
-        let context = WindowFitContext(
-            screen: WindowFitGeometry.accessibilityFrame(from: screen.frame, primaryScreenTop: primaryTop),
-            workArea: WindowFitGeometry.accessibilityFrame(from: screen.visibleFrame, primaryScreenTop: primaryTop),
-            taskbar: WindowFitGeometry.accessibilityFrame(from: taskbarFrame, primaryScreenTop: primaryTop))
-        worker.configure(processID: app.processIdentifier, context: context)
+        worker.configure(processID: app.processIdentifier, contexts: contexts)
     }
 }
 
@@ -83,7 +78,7 @@ private final class WindowFitWorker {
 
     private let queue = DispatchQueue(label: "studio.macbar.window-fitting", qos: .userInitiated)
     private var processID: pid_t?
-    private var context: WindowFitContext?
+    private var contexts: [WindowFitContext] = []
     private var application: AXUIElement?
     private var observer: AXObserver?
     private var observedWindows: [AXUIElement] = []
@@ -91,14 +86,14 @@ private final class WindowFitWorker {
     private var attempts: [ResizeAttempt] = []
     private var pendingCheck: DispatchWorkItem?
 
-    func configure(processID: pid_t?, context: WindowFitContext?, forgetAdjustments: Bool = false) {
+    func configure(processID: pid_t?, contexts: [WindowFitContext], forgetAdjustments: Bool = false) {
         queue.async { [weak self] in
             guard let self else { return }
             if forgetAdjustments { self.managed = [:]; self.attempts = [] }
-            if self.processID != processID || self.context != context {
+            if self.processID != processID || self.contexts != contexts {
                 if self.processID != processID { self.detachObserver() }
                 self.processID = processID
-                self.context = context
+                self.contexts = contexts
                 self.attempts = []
                 if processID != nil && self.application == nil { self.attachObserver() }
             }
@@ -116,7 +111,7 @@ private final class WindowFitWorker {
 
     private func scheduleCheckOnQueue() {
         pendingCheck?.cancel()
-        guard processID != nil, context != nil else { return }
+        guard processID != nil, !contexts.isEmpty else { return }
         let work = DispatchWorkItem { [weak self] in self?.inspectFocusedWindow() }
         pendingCheck = work
         queue.asyncAfter(deadline: .now() + .milliseconds(120), execute: work)
@@ -150,7 +145,7 @@ private final class WindowFitWorker {
     }
 
     private func inspectFocusedWindow() {
-        guard let application, let processID, let context else { return }
+        guard let application, let processID, !contexts.isEmpty else { return }
         // Don't fight a user's in-progress drag. Check once the mouse is released.
         if CGEventSource.buttonState(.combinedSessionState, button: .left) {
             scheduleCheckOnQueue()
@@ -160,7 +155,8 @@ private final class WindowFitWorker {
               CFGetTypeID(windowValue) == AXUIElementGetTypeID() else { return }
         let window = windowValue as! AXUIElement
         guard boolAttribute(application, kAXFrontmostAttribute) == true,
-              let frame = readFrame(window) else { return }
+              let frame = readFrame(window),
+              let context = WindowFitGeometry.context(for: frame, in: contexts) else { return }
         observe(window)
 
         guard let fullScreen = boolAttribute(window, "AXFullScreen"),

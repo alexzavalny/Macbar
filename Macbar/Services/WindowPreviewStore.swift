@@ -33,7 +33,7 @@ final class WindowPreviewStore: ObservableObject {
         self.hasAccess = hasAccess
     }
 
-    func show(_ item: ApplicationItem) {
+    func show(_ item: ApplicationItem, on display: CGRect? = nil) {
         cancel()
         guard hasAccess() else { state = .permissionRequired; return }
         state = .loading
@@ -43,9 +43,14 @@ final class WindowPreviewStore: ObservableObject {
             do {
                 let result = try await provider.windows(for: item.id)
                 guard !Task.isCancelled, requestID == request else { return }
-                windows = result
+                let visible = result.filter { window in
+                    guard let display else { return true }
+                    let overlap = window.frame.intersection(display)
+                    return !overlap.isNull && overlap.width > 0 && overlap.height > 0
+                }
+                windows = visible
                 state = .ready
-                for window in result {
+                for window in visible {
                     guard !Task.isCancelled, requestID == request else { return }
                     let image = try? await provider.image(for: window)
                     guard !Task.isCancelled, requestID == request else { return }

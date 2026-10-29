@@ -38,6 +38,21 @@ final class WindowPreviewTests: XCTestCase {
     }
 
     @MainActor
+    func testPreviewsOnlyCaptureWindowsOnTheOriginatingDisplay() async {
+        let provider = PreviewProviderStub()
+        let store = WindowPreviewStore(provider: provider, hasAccess: { true })
+        let display = CGRect(x: -701, y: -1440, width: 2560, height: 1440)
+        store.show(app("A"), on: display)
+        while provider.continuations["A"] == nil { await Task.yield() }
+        let local = WindowPreview(id: 1, processID: 123, title: "Local",
+                                  frame: CGRect(x: -600, y: -1300, width: 900, height: 700))
+        provider.finish("A", windows: [window(2), local])
+        for _ in 0..<100 where provider.captures.isEmpty { await Task.yield() }
+        XCTAssertEqual(store.windows.map(\.id), [1])
+        XCTAssertEqual(provider.captures, [1])
+    }
+
+    @MainActor
     func testHoverWithoutPermissionDoesNotEnumerateOrCapture() async {
         let provider = PreviewProviderStub()
         let store = WindowPreviewStore(provider: provider, hasAccess: { false })

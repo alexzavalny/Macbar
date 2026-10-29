@@ -26,6 +26,31 @@ final class CPUUsageTests: XCTestCase {
         XCTAssertEqual(ResourceCapacity(amount: 120, total: 100)?.percentage, 100)
     }
 
+    func testProcessCPUTimeIsInNanoseconds() throws {
+        // Spin so the process has enough CPU time for a meaningful comparison.
+        let deadline = Date().addingTimeInterval(0.2)
+        var spins = 0
+        while Date() < deadline { spins &+= 1 }
+        XCTAssertGreaterThan(spins, 0)
+
+        let sampled = try XCTUnwrap(ProcessCPUTime.nanoseconds(for: getpid()))
+        var usage = rusage()
+        XCTAssertEqual(getrusage(RUSAGE_SELF, &usage), 0)
+        func nanoseconds(_ time: timeval) -> Double { Double(time.tv_sec) * 1e9 + Double(time.tv_usec) * 1e3 }
+        let expected = nanoseconds(usage.ru_utime) + nanoseconds(usage.ru_stime)
+        XCTAssertEqual(Double(sampled) / expected, 1, accuracy: 0.1)
+    }
+
+    func testTileFlameIsSubtleAndGrowsWithHeat() throws {
+        XCTAssertNil(TileFlame(level: 0))
+        let flames = try (1...3).map { try XCTUnwrap(TileFlame(level: $0)) }
+        XCTAssertEqual(flames.map(\.height), flames.map(\.height).sorted())
+        XCTAssertEqual(flames.map(\.birthRate), flames.map(\.birthRate).sorted())
+        XCTAssertLessThan(flames[2].height, 0.6)
+        XCTAssertTrue(flames.allSatisfy { $0.peakOpacity <= 0.45 })
+        XCTAssertEqual(TileFlame(level: 7), flames[2])
+    }
+
     @MainActor
     func testSamplingFailureAndDisableClearOldValue() {
         var ticks: CPUTicks? = CPUTicks(user: 0, system: 0, idle: 0, nice: 0)

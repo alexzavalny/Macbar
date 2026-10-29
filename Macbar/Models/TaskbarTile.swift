@@ -9,10 +9,19 @@ struct TaskbarWindow: Identifiable, Equatable {
     let isMinimized: Bool
     var isFocused: Bool
     var element: AXUIElement? = nil
+    var frame: CGRect? = nil
+    var isOnScreen = true
+
+    func isVisible(on display: CGRect) -> Bool {
+        guard isOnScreen, !isMinimized, let frame else { return false }
+        let overlap = frame.intersection(display)
+        return !overlap.isNull && overlap.width > 0 && overlap.height > 0
+    }
 
     static func == (lhs: Self, rhs: Self) -> Bool {
         lhs.id == rhs.id && lhs.bundleID == rhs.bundleID && lhs.processID == rhs.processID &&
-        lhs.title == rhs.title && lhs.isMinimized == rhs.isMinimized && lhs.isFocused == rhs.isFocused
+        lhs.title == rhs.title && lhs.isMinimized == rhs.isMinimized && lhs.isFocused == rhs.isFocused &&
+        lhs.frame == rhs.frame && lhs.isOnScreen == rhs.isOnScreen
     }
 }
 
@@ -25,6 +34,7 @@ enum SpecialTile: String {
 struct TaskbarTile: Identifiable {
     let app: ApplicationItem
     let window: TaskbarWindow?
+    var isLauncherOnly = false
     var special: SpecialTile? { SpecialTile(rawValue: app.id) }
     var id: String { window.map { "window:\($0.id)" } ?? "app:\(app.id)" }
     var title: String {
@@ -33,17 +43,21 @@ struct TaskbarTile: Identifiable {
     }
 
     func showsTitle(mode: TaskbarMode, isRunning: Bool) -> Bool {
-        special == nil && (window != nil || (mode == .windows && isRunning))
+        special == nil && !isLauncherOnly && (window != nil || (mode == .windows && isRunning))
     }
 
-    static func make(apps: [ApplicationItem], windows: [TaskbarWindow], mode: TaskbarMode, separateMultipleWindows: Bool = false) -> [Self] {
+    static func make(apps: [ApplicationItem], windows: [TaskbarWindow], mode: TaskbarMode, separateMultipleWindows: Bool = false,
+                     display: CGRect? = nil, pinnedIDs: Set<String> = []) -> [Self] {
         var seen = Set<String>()
         return apps.filter { seen.insert($0.id).inserted }.flatMap { app -> [Self] in
-            let appWindows = windows.filter { $0.bundleID == app.id }
+            let appWindows = windows.filter { $0.bundleID == app.id && (display == nil || $0.isVisible(on: display!)) }
+            if display != nil && appWindows.isEmpty && !pinnedIDs.contains(app.id) && SpecialTile(rawValue: app.id) == nil {
+                return []
+            }
             if SpecialTile(rawValue: app.id) != nil { return [Self(app: app, window: nil)] }
             let matches = mode == .windows || (separateMultipleWindows && appWindows.count >= 2) ? appWindows : []
             // A pinned app is replaced by its windows, so it doesn't gain a duplicate launcher.
-            return matches.isEmpty ? [Self(app: app, window: nil)] : matches.map { Self(app: app, window: $0) }
+            return matches.isEmpty ? [Self(app: app, window: nil, isLauncherOnly: display != nil)] : matches.map { Self(app: app, window: $0) }
         }
     }
 }
@@ -247,5 +261,27 @@ struct TaskbarStripLayout {
         guard buttons > 0 else { return 0 }
         return (start ? 74 : 0) + (search ? (searchLabel ? 115 : 34) : 0) + (missionControl ? 40 : 0)
             + CGFloat(buttons - 1) * 4 + 23
+    }
+}
+
+/// AppKit uses a bottom-left origin; window-server and Accessibility bounds use
+/// the primary display's top-left origin, including displays above or left of it.
+struct TaskbarDisplay: Identifiable, Equatable {
+    let id: CGDirectDisplayID
+    let frame: CGRect
+    let visibleFrame: CGRect
+    let windowFrame: CGRect
+
+    init(screen: NSScreen) {
+        id = screen.displayID
+        frame = screen.frame
+        visibleFrame = screen.visibleFrame
+        windowFrame = CGDisplayBounds(id)
+    }
+}
+
+extension NSScreen {
+    var displayID: CGDirectDisplayID {
+        (deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? NSNumber)?.uint32Value ?? CGMainDisplayID()
     }
 }

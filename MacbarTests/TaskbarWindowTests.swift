@@ -17,7 +17,7 @@ final class TaskbarWindowTests: XCTestCase {
         let first = AXUIElementCreateApplication(100001)
         let second = AXUIElementCreateApplication(100002)
         var pass = 0
-        let provider = AccessibilityTaskbarWindowProvider { element, name in
+        let provider = AccessibilityTaskbarWindowProvider(readAttribute: { element, name in
             if name == kAXWindowsAttribute {
                 pass += 1
                 return (pass == 1 ? [first, second] : [first]) as CFArray
@@ -31,7 +31,7 @@ final class TaskbarWindowTests: XCTestCase {
                 return kCFBooleanFalse
             }
             return nil
-        }
+        })
         let processes = [TaskbarWindowProcess(id: 123, bundleID: "editor")]
         let original = await provider.windows(for: processes, frontmostPID: nil)
         let minimized = await provider.windows(for: processes, frontmostPID: nil)
@@ -43,7 +43,7 @@ final class TaskbarWindowTests: XCTestCase {
 
     func testProviderDiscoversAlreadyMinimizedFinderWindowsDespiteDialogSubrole() async {
         let element = AXUIElementCreateApplication(100001)
-        let provider = AccessibilityTaskbarWindowProvider { _, name in
+        let provider = AccessibilityTaskbarWindowProvider(readAttribute: { _, name in
             switch name {
             case kAXWindowsAttribute: return [element] as CFArray
             case kAXSubroleAttribute: return kAXDialogSubrole as CFString
@@ -51,7 +51,7 @@ final class TaskbarWindowTests: XCTestCase {
             case kAXMinimizedAttribute: return kCFBooleanTrue
             default: return nil
             }
-        }
+        })
         let windows = await provider.windows(for: [TaskbarWindowProcess(id: 123, bundleID: "com.apple.finder")], frontmostPID: nil)
         XCTAssertEqual(windows.count, 1)
         XCTAssertTrue(windows.first?.isMinimized == true)
@@ -61,7 +61,7 @@ final class TaskbarWindowTests: XCTestCase {
         let first = AXUIElementCreateApplication(100001)
         let second = AXUIElementCreateApplication(100002)
         var pass = 0
-        let provider = AccessibilityTaskbarWindowProvider { element, name in
+        let provider = AccessibilityTaskbarWindowProvider(readAttribute: { element, name in
             if name == kAXWindowsAttribute {
                 pass += 1
                 if pass == 2 { return nil }
@@ -71,7 +71,7 @@ final class TaskbarWindowTests: XCTestCase {
             if name == kAXTitleAttribute { return (CFEqual(element, first) ? "First" : "Second") as CFString }
             if name == kAXMinimizedAttribute { return kCFBooleanFalse }
             return nil
-        }
+        })
         let processes = [TaskbarWindowProcess(id: 123, bundleID: "editor")]
         let original = await provider.windows(for: processes, frontmostPID: nil)
         let failed = await provider.windows(for: processes, frontmostPID: nil)
@@ -81,6 +81,101 @@ final class TaskbarWindowTests: XCTestCase {
             XCTAssertEqual(recovered.map(\.id), original.map(\.id))
             XCTAssertEqual(recovered.map(\.title), ["First", "Second"])
         }
+    }
+
+    func testProviderUpdatesBoundsAndDesktopVisibilityEvenWhenAXStopsResponding() async {
+        let element = AXUIElementCreateApplication(100001)
+        var frame = CGRect(x: -600, y: -1300, width: 700, height: 600)
+        var onScreen = true
+        var responds = true
+        let provider = AccessibilityTaskbarWindowProvider(visibility: {
+            WindowVisibilitySnapshot(windows: [.init(processID: 123, title: "Document", frame: frame, isOnScreen: onScreen)])
+        }, readAttribute: { _, name in
+            switch name {
+            case kAXWindowsAttribute: return responds ? [element] as CFArray : nil
+            case kAXSubroleAttribute: return kAXStandardWindowSubrole as CFString
+            case kAXTitleAttribute: return "Document" as CFString
+            case kAXMinimizedAttribute: return kCFBooleanFalse
+            case kAXPositionAttribute:
+                var point = frame.origin
+                return AXValueCreate(.cgPoint, &point)
+            case kAXSizeAttribute:
+                var size = frame.size
+                return AXValueCreate(.cgSize, &size)
+            default: return nil
+            }
+        })
+        let processes = [TaskbarWindowProcess(id: 123, bundleID: "editor")]
+        let first = await provider.windows(for: processes, frontmostPID: nil)
+        XCTAssertEqual(first.first?.frame, frame)
+        XCTAssertTrue(first.first?.isOnScreen == true)
+        onScreen = false
+        responds = false
+        let switched = await provider.windows(for: processes, frontmostPID: nil)
+        XCTAssertEqual(switched.first?.id, first.first?.id)
+        XCTAssertFalse(switched.first!.isOnScreen)
+        responds = true
+        onScreen = true
+        frame = CGRect(x: 100, y: 40, width: 900, height: 700)
+        let moved = await provider.windows(for: processes, frontmostPID: nil)
+        XCTAssertEqual(moved.first?.id, first.first?.id)
+        XCTAssertEqual(moved.first?.frame, frame)
+        XCTAssertTrue(moved.first!.isOnScreen)
+    }
+
+    func testVisibilityMatchesDesktopAndDoesNotConfuseIdenticalBoundsAcrossSpaces() {
+        let frame = CGRect(x: 100, y: 100, width: 800, height: 600)
+        let snapshot = WindowVisibilitySnapshot(windows: [
+            .init(processID: 123, title: "Here", frame: frame, isOnScreen: true),
+            .init(processID: 123, title: "Other desktop", frame: frame, isOnScreen: false)
+        ])
+        XCTAssertTrue(snapshot.isOnScreen(processID: 123, title: "Here", frame: frame))
+        XCTAssertFalse(snapshot.isOnScreen(processID: 123, title: "Other desktop", frame: frame))
+        XCTAssertFalse(snapshot.isOnScreen(processID: 124, title: "Here", frame: frame))
+        let redacted = WindowVisibilitySnapshot(windows: [
+            .init(processID: 123, title: nil, frame: frame, isOnScreen: true),
+            .init(processID: 123, title: nil, frame: frame, isOnScreen: false)
+        ])
+        XCTAssertFalse(redacted.isOnScreen(processID: 123, title: "Other desktop", frame: frame))
+    }
+
+    func testEachDisplayShowsOnlyItsVisibleWindowsAndKeepsPinnedLaunchers() {
+        let primary = CGRect(x: 0, y: 0, width: 1440, height: 900)
+        let upper = CGRect(x: -701, y: -1440, width: 2560, height: 1440)
+        var here = window("Main")
+        here.frame = CGRect(x: 100, y: 100, width: 800, height: 600)
+        var there = window("Upper display")
+        there.frame = CGRect(x: -600, y: -1300, width: 900, height: 700)
+        var hidden = window("Another desktop")
+        hidden.frame = here.frame
+        hidden.isOnScreen = false
+        var minimized = window("Minimized", minimized: true)
+        minimized.frame = here.frame
+        let windows = [here, there, hidden, minimized]
+        let apps = [app("editor"), app("browser"), app("pinned")]
+        let mainTiles = TaskbarTile.make(apps: apps, windows: windows, mode: .windows,
+                                        display: primary, pinnedIDs: ["pinned"])
+        let upperTiles = TaskbarTile.make(apps: apps, windows: windows, mode: .windows,
+                                         display: upper, pinnedIDs: ["pinned"])
+        XCTAssertEqual(mainTiles.map(\.title), ["Main", "pinned"])
+        XCTAssertEqual(upperTiles.map(\.title), ["Upper display", "pinned"])
+        XCTAssertFalse(mainTiles.last!.showsTitle(mode: .windows, isRunning: true))
+        let empty = TaskbarTile.make(apps: apps, windows: windows, mode: .windows,
+                                    display: CGRect(x: 4000, y: 0, width: 1000, height: 1000), pinnedIDs: ["editor"])
+        XCTAssertEqual(empty.map(\.id), ["app:editor"])
+        XCTAssertFalse(empty[0].showsTitle(mode: .windows, isRunning: true))
+    }
+
+    func testSpanningWindowsAppearOnBothDisplaysButTouchingEdgesDoesNotCount() {
+        var spanning = window("Spanning")
+        spanning.frame = CGRect(x: -100, y: 100, width: 200, height: 400)
+        let left = CGRect(x: -1440, y: 0, width: 1440, height: 900)
+        let right = CGRect(x: 0, y: 0, width: 1440, height: 900)
+        XCTAssertTrue(spanning.isVisible(on: left))
+        XCTAssertTrue(spanning.isVisible(on: right))
+        spanning.frame = CGRect(x: 0, y: 100, width: 800, height: 400)
+        XCTAssertFalse(spanning.isVisible(on: left))
+        XCTAssertTrue(spanning.isVisible(on: right))
     }
 
     private func app(_ id: String) -> ApplicationItem {
