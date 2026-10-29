@@ -224,6 +224,18 @@ final class TaskbarWindowTests: XCTestCase {
                        ["editor", "running", "browser"])
     }
 
+    func testMusicCatalogArtworkRequiresMatchingTrackArtistAndAlbum() {
+        let track = MusicArtworkLookup.Track(name: "Run Rabbit", artist: "Mollie Elizabeth", album: "People Pleaser - EP")
+        let cover = URL(string: "https://is1-ssl.mzstatic.com/cover.jpg")!
+        let exact = MusicArtworkLookup.Match(trackName: "run rabbit", artistName: "Mollie Elizabeth", collectionName: "People Pleaser - EP", artworkUrl100: cover)
+        let otherAlbum = MusicArtworkLookup.Match(trackName: "Run Rabbit", artistName: "Mollie Elizabeth", collectionName: "Different Album", artworkUrl100: cover)
+        let otherArtist = MusicArtworkLookup.Match(trackName: "Run Rabbit", artistName: "Someone Else", collectionName: "People Pleaser - EP", artworkUrl100: cover)
+        XCTAssertTrue(MusicArtworkLookup.matches(exact, track: track))
+        XCTAssertFalse(MusicArtworkLookup.matches(otherAlbum, track: track))
+        XCTAssertFalse(MusicArtworkLookup.matches(otherArtist, track: track))
+        XCTAssertFalse(MusicArtworkLookup.matches(exact, track: .init(name: "", artist: "Mollie Elizabeth", album: "")))
+    }
+
     func testMusicSpecialTileKeepsControlsTogetherAcrossWindowModesAndCrowding() {
         let music = app("com.apple.Music")
         let musicWindow = TaskbarWindow(id: UUID(), bundleID: music.id, processID: 1, title: "Music", isMinimized: false, isFocused: true)
@@ -265,7 +277,7 @@ final class TaskbarWindowTests: XCTestCase {
         let layout = TaskbarStripLayout(screenWidth: 1440, alignment: .center,
             preferredWidths: Array(repeating: 200, count: 14), mode: .windows)
         XCTAssertFalse(layout.centered)
-        XCTAssertTrue(layout.showsSearchLabel)
+        XCTAssertFalse(layout.showsSearchLabel)
         XCTAssertEqual(layout.capacity, 14)
         XCTAssertTrue(layout.tileWidths.allSatisfy { $0 >= 64 && $0 < 88 })
     }
@@ -274,7 +286,7 @@ final class TaskbarWindowTests: XCTestCase {
         let spacious = TaskbarStripLayout(screenWidth: 1440, alignment: .left,
             preferredWidths: [150, 120, 180], mode: .icons, titledTiles: [false, true, true])
         XCTAssertEqual(spacious.tileWidths, [44, 120, 180])
-        let crowded = TaskbarStripLayout(screenWidth: 800, alignment: .left,
+        let crowded = TaskbarStripLayout(screenWidth: 900, alignment: .left,
             preferredWidths: [150] + Array(repeating: 200, count: 5), mode: .icons,
             titledTiles: [false] + Array(repeating: true, count: 5))
         XCTAssertEqual(crowded.capacity, 6)
@@ -289,7 +301,7 @@ final class TaskbarWindowTests: XCTestCase {
         XCTAssertTrue(centered.centered)
         XCTAssertTrue(centered.showsSearchLabel)
         XCTAssertEqual(centered.tileWidths, [95, 105, 180])
-        let mixed = TaskbarStripLayout(screenWidth: 1440, alignment: .center,
+        let mixed = TaskbarStripLayout(screenWidth: 1520, alignment: .center,
             preferredWidths: [88, 90] + Array(repeating: 200, count: 8), mode: .windows)
         XCTAssertFalse(mixed.centered)
         XCTAssertEqual(mixed.capacity, 10)
@@ -306,7 +318,7 @@ final class TaskbarWindowTests: XCTestCase {
         XCTAssertEqual(Set(icons.tileWidths), [44])
         let overflow = TaskbarStripLayout(screenWidth: 1440, alignment: .center,
             preferredWidths: Array(repeating: 200, count: 40), mode: .windows)
-        XCTAssertGreaterThan(overflow.capacity, 20)
+        XCTAssertEqual(overflow.capacity, 19)
         XCTAssertLessThan(overflow.capacity, 40)
     }
 

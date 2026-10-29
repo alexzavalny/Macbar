@@ -2,6 +2,45 @@ import XCTest
 @testable import Macbar
 
 final class MacbarTests: XCTestCase {
+    @MainActor
+    func testStartVisibilityAndScratchpadSurviveRestartIndependentlyOfSearch() {
+        let suite = "StartPreferencesTests.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suite)!
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let preferences = Preferences(defaults: defaults)
+        XCTAssertTrue(preferences.shows(.start))
+        XCTAssertEqual(preferences.startQuickNote, "")
+        preferences.startQuickNote = "An idea\nFor tomorrow ✨"
+        preferences.setVisible(false, for: .search)
+        var restored = Preferences(defaults: defaults)
+        XCTAssertTrue(restored.shows(.start))
+        XCTAssertFalse(restored.shows(.search))
+        XCTAssertEqual(restored.startQuickNote, "An idea\nFor tomorrow ✨")
+        restored.setVisible(false, for: .start)
+        restored.startQuickNote = ""
+        restored = Preferences(defaults: defaults)
+        XCTAssertFalse(restored.shows(.start))
+        XCTAssertEqual(restored.startQuickNote, "")
+    }
+
+    func testStartReservesSpaceAcrossHeaderCombinationsAndCrowdedDisplays() {
+        for start in [false, true] {
+            for search in [false, true] {
+                for missionControl in [false, true] {
+                    for width: CGFloat in [640, 800, 1100, 1440, 2560] {
+                        let layout = TaskbarStripLayout(screenWidth: width, alignment: .center,
+                            preferredWidths: Array(repeating: 180, count: 30), mode: .windows,
+                            showSearch: search, showMissionControl: missionControl, showStart: start)
+                        let overflow: CGFloat = layout.capacity < 30 ? (layout.capacity > 0 ? 38 : 34) : 0
+                        XCTAssertLessThanOrEqual(layout.headerWidth + layout.tilesWidth + overflow, layout.availableWidth + 0.01)
+                        if start { XCTAssertGreaterThanOrEqual(layout.headerWidth, 74) }
+                        if !start && !search && !missionControl { XCTAssertEqual(layout.headerWidth, 0) }
+                    }
+                }
+            }
+        }
+    }
+
     func testSearchIgnoresCaseAccentsAndExtraWhitespace() {
         XCTAssertTrue(ApplicationItem.matches("Café Studio", query: " CAFE   stu "))
         XCTAssertTrue(ApplicationItem.matches("System Settings", query: "settings system"))

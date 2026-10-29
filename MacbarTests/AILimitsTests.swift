@@ -82,7 +82,7 @@ final class AILimitsTests: XCTestCase {
         let full = TaskbarStripLayout(screenWidth: 1440, alignment: .center, preferredWidths: widths,
                                      mode: .windows, trayWidth: 344)
         let hidden = TaskbarStripLayout(screenWidth: 1440, alignment: .center, preferredWidths: widths,
-                                       mode: .windows, trayWidth: 28, showSearch: false, showMissionControl: false)
+                                       mode: .windows, trayWidth: 28, showSearch: false, showMissionControl: false, showStart: false)
         XCTAssertEqual(hidden.headerWidth, 0)
         XCTAssertGreaterThan(hidden.capacity, full.capacity)
         XCTAssertLessThanOrEqual(full.tilesWidth + full.headerWidth + 38, full.availableWidth + 0.01)
@@ -105,6 +105,51 @@ final class AILimitsTests: XCTestCase {
         XCTAssertEqual(store.state(for: .codex).snapshot?.remainingPercent, 60)
         XCTAssertNil(store.state(for: .claude).snapshot)
         if case .keychainAccess = store.state(for: .claude).error {} else { XCTFail("Expected Claude access state") }
+        store.setEnabled(false)
+    }
+
+    func testClaudeSummaryKeepsExpiredAndFailedSnapshotsButCodexDoesNot() {
+        let now = Date()
+        let snapshot = AIUsageSnapshot(windows: [AIUsageWindow(id: "five_hour", title: "5 hours", usedPercent: 40, resetsAt: now.addingTimeInterval(-1))], fetchedAt: now.addingTimeInterval(-300))
+        var state = AIProviderState(snapshot: snapshot)
+        XCTAssertTrue(state.isStale(at: now))
+        XCTAssertEqual(state.summaryPercent(for: .claude, at: now), 60)
+        XCTAssertNil(state.summaryPercent(for: .codex, at: now))
+        state.error = .keychainAccess
+        XCTAssertEqual(state.summaryPercent(for: .claude, at: now), 60)
+        XCTAssertNil(AIProviderState().summaryPercent(for: .claude, at: now))
+    }
+
+    @MainActor
+    func testClaudeRetainsLastSnapshotAcrossErrorsAndReplacesItOnSuccess() async {
+        let provider = LimitsProviderStub()
+        let store = AILimitsStore(provider: provider)
+        store.setEnabled(true)
+        for _ in 0..<1000 where provider.pending.count < 2 { await Task.yield() }
+        let first = AIUsageSnapshot(windows: [AIUsageWindow(id: "five_hour", title: "5 hours", usedPercent: 40, resetsAt: nil)], fetchedAt: Date())
+        for (key, continuation) in provider.pending {
+            if key == .claude { continuation.resume(returning: first) }
+            else { continuation.resume(throwing: AIUsageError.unavailable) }
+        }
+        provider.pending.removeAll()
+        for _ in 0..<1000 where store.state(for: .claude).isRefreshing { await Task.yield() }
+        for failure in [AIUsageError.keychainAccess, .signIn(.claude), .unavailable] {
+            store.refresh(only: .claude)
+            for _ in 0..<1000 where provider.pending.isEmpty { await Task.yield() }
+            guard !provider.pending.isEmpty else { XCTFail("Missing refresh"); break }
+            provider.pending.removeFirst().1.resume(throwing: failure)
+            for _ in 0..<1000 where store.state(for: .claude).isRefreshing { await Task.yield() }
+            XCTAssertEqual(store.state(for: .claude).snapshot, first)
+            XCTAssertEqual(store.state(for: .claude).summaryPercent(for: .claude), 60)
+            XCTAssertTrue(store.state(for: .claude).isStale())
+        }
+        store.refresh(only: .claude)
+        for _ in 0..<1000 where provider.pending.isEmpty { await Task.yield() }
+        let newer = AIUsageSnapshot(windows: [AIUsageWindow(id: "five_hour", title: "5 hours", usedPercent: 70, resetsAt: nil)], fetchedAt: Date())
+        if !provider.pending.isEmpty { provider.pending.removeFirst().1.resume(returning: newer) }
+        for _ in 0..<1000 where store.state(for: .claude).isRefreshing { await Task.yield() }
+        XCTAssertEqual(store.state(for: .claude).snapshot, newer)
+        XCTAssertFalse(store.state(for: .claude).isStale())
         store.setEnabled(false)
     }
 

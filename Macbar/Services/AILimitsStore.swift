@@ -34,6 +34,16 @@ struct AIProviderState {
     var snapshot: AIUsageSnapshot?
     var isRefreshing = false
     var error: AIUsageError?
+
+    func isStale(at now: Date = Date()) -> Bool {
+        guard let snapshot else { return false }
+        return error != nil || snapshot.summaryWindows.contains { $0.resetsAt.map { $0 <= now } ?? false }
+    }
+
+    func summaryPercent(for provider: AIProvider, at now: Date = Date()) -> Double? {
+        guard let snapshot, provider == .claude || !isStale(at: now) else { return nil }
+        return snapshot.remainingPercent
+    }
 }
 
 enum AIUsageError: Error, LocalizedError {
@@ -329,7 +339,7 @@ final class AILimitsStore: ObservableObject {
                     var state = self.state(for: key)
                     state.isRefreshing = false
                     state.error = failure
-                    if failure.clearsSnapshot { state.snapshot = nil }
+                    if key != .claude && failure.clearsSnapshot { state.snapshot = nil }
                     states[key] = state
                 }
                 tasks[key] = nil

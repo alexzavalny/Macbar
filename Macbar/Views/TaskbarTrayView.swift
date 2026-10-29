@@ -5,6 +5,7 @@ struct TaskbarTrayView: View {
     @ObservedObject var preferences: Preferences
     @ObservedObject var audio: AudioStore
     @ObservedObject var battery: BatteryStore
+    @ObservedObject var cpu: CPUStore
     @ObservedObject var wifi: WiFiStore
     @ObservedObject var keyboard: KeyboardInputStore
     @ObservedObject var aiLimits: AILimitsStore
@@ -64,22 +65,30 @@ struct TaskbarTrayView: View {
                 KeyboardInputMenu(keyboard: keyboard, willOpen: { controller.dismissPopup() },
                                   dragActions: dragActions(for: item), register: { buttons[item] = $0 })
             } else {
-                TrayButton(selected: controller.popup == popup(for: item),
+                TrayButton(selected: item != .trash && controller.popup == popup(for: item),
                            accessibilityLabel: title(for: item),
-                           accessibilityValue: item == .battery ? battery.state?.summary ?? "" : "",
+                           accessibilityValue: item == .battery ? battery.state?.summary ?? "" : item == .cpu ? cpu.summary : "",
                            help: help(for: item), dragActions: dragActions(for: item),
                            register: { buttons[item] = $0 }, action: {
                     drawerOpen = false
-                    controller.toggle(popup(for: item))
+                    if item == .trash { controller.openTrash() }
+                    else { controller.toggle(popup(for: item)) }
                 }) { label(for: item) }
             }
         }
         .frame(width: width(for: item), height: 44)
         .opacity(draggedItem == item ? 0 : 1)
         .contextMenu {
+            if item == .trash {
+                Button("Empty Trash…") { controller.emptyTrash() }
+                Divider()
+            }
             Button(inDrawer ? "Show on taskbar" : "Move to hidden icons") {
                 preferences.setInDrawer(!inDrawer, for: item)
             }
+        }
+        .accessibilityActions {
+            if item == .trash { Button("Empty Trash") { controller.emptyTrash() } }
         }
         .accessibilityAction(named: inDrawer ? "Show on taskbar" : "Move to hidden icons") {
             preferences.setInDrawer(!inDrawer, for: item)
@@ -155,9 +164,10 @@ struct TaskbarTrayView: View {
         case .wifi: return .wifi
         case .sound: return .volume
         case .battery: return .battery
+        case .cpu: return .cpu
         case .clock: return .calendar
         case .settings: return .settings
-        case .inputLanguage: preconditionFailure("Input language uses its native menu")
+        case .inputLanguage, .trash: preconditionFailure("This control does not use a popup")
         }
     }
 
@@ -166,6 +176,7 @@ struct TaskbarTrayView: View {
         case .aiLimits: return 56
         case .inputLanguage: return 38
         case .battery: return 32
+        case .cpu: return 58
         case .clock: return 88
         default: return 28
         }
@@ -183,7 +194,7 @@ struct TaskbarTrayView: View {
     }
 
     private func help(for item: TrayItem) -> String {
-        item == .battery ? battery.state?.summary ?? "Battery" : title(for: item)
+        item == .battery ? battery.state?.summary ?? "Battery" : item == .cpu ? cpu.summary : item == .trash ? "Open Trash; right-click to empty" : title(for: item)
     }
 
     @ViewBuilder private func label(for item: TrayItem) -> some View {
@@ -196,6 +207,11 @@ struct TaskbarTrayView: View {
                 Image(systemName: state.symbol).font(.system(size: 17))
                     .foregroundStyle(state.isLow ? Color.red : state.isCharging ? Color.green : Color.primary)
             }
+        case .cpu:
+            HStack(spacing: 3) {
+                CPUMeter(fraction: cpu.usage?.total)
+                Text(cpu.percentageLabel).font(.system(size: 11, weight: .medium)).monospacedDigit()
+            }
         case .clock:
             TimelineView(.periodic(from: .now, by: 1)) { context in
                 VStack(alignment: .trailing, spacing: 3) {
@@ -204,6 +220,7 @@ struct TaskbarTrayView: View {
                 }
                 .padding(.horizontal, 4).frame(height: 44)
             }
+        case .trash: Image(systemName: "trash").font(.system(size: 15))
         case .settings: Image(systemName: "gearshape").font(.system(size: 15))
         case .inputLanguage: EmptyView()
         }
@@ -218,4 +235,30 @@ private struct TrayFrameAnchor: NSViewRepresentable {
         return view
     }
     func updateNSView(_ view: NSView, context: Context) {}
+}
+
+private struct CPUMeter: View {
+    let fraction: Double?
+    private let height: CGFloat = 22
+
+    var body: some View {
+        ZStack(alignment: .bottom) {
+            RoundedRectangle(cornerRadius: 3).fill(.primary.opacity(0.10))
+            LinearGradient(stops: [
+                .init(color: .green, location: 0),
+                .init(color: .green, location: 0.35),
+                .init(color: .yellow, location: 0.55),
+                .init(color: .yellow, location: 0.95),
+                .init(color: .red, location: 0.95),
+                .init(color: .red, location: 1)
+            ], startPoint: .bottom, endPoint: .top)
+            .mask(alignment: .bottom) {
+                Rectangle().frame(height: height * CGFloat(min(max(fraction ?? 0, 0), 1)))
+            }
+        }
+        .frame(width: 12, height: height)
+        .clipShape(RoundedRectangle(cornerRadius: 3))
+        .overlay(RoundedRectangle(cornerRadius: 3).strokeBorder(.primary.opacity(0.25), lineWidth: 1))
+        .animation(.easeInOut(duration: 0.8), value: fraction)
+    }
 }

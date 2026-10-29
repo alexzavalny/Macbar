@@ -6,6 +6,7 @@ struct TaskbarView: View {
     @ObservedObject var preferences: Preferences
     @ObservedObject var audio: AudioStore
     @ObservedObject var battery: BatteryStore
+    @ObservedObject var cpu: CPUStore
     @ObservedObject var wifi: WiFiStore
     @ObservedObject var keyboard: KeyboardInputStore
     @ObservedObject var aiLimits: AILimitsStore
@@ -17,6 +18,7 @@ struct TaskbarView: View {
     @State private var draggedTileID: String?
     @State private var dragOrder: TaskbarTileOrder?
     @State private var tileFrames: [String: CGRect] = [:]
+    @State private var startHovered = false
 
     var body: some View {
         GeometryReader { geometry in
@@ -39,7 +41,7 @@ struct TaskbarView: View {
                 memberTitledTiles: items.map { item in item.tiles.map { tile in
                     tile.showsTitle(mode: preferences.taskbarMode, isRunning: applications.isRunning(tile.app.id))
                 } }, memberIconWidths: items.map { $0.tiles.map { $0.special?.width ?? 44 } }, trayWidth: sideWidth,
-                showSearch: preferences.shows(.search), showMissionControl: preferences.shows(.missionControl))
+                showSearch: preferences.shows(.search), showMissionControl: preferences.shows(.missionControl), showStart: preferences.shows(.start))
             ZStack {
                 GlassBackground(material: .hudWindow)
                 (colorScheme == .dark ? Color(red: 0.06, green: 0.08, blue: 0.13).opacity(0.62) : Color(red: 0.90, green: 0.94, blue: 1).opacity(0.62))
@@ -53,6 +55,21 @@ struct TaskbarView: View {
                 }
                 .padding(.horizontal, 12)
                 HStack(spacing: 4) {
+                    if preferences.shows(.start) {
+                        Button { controller.toggle(.start) } label: {
+                            HStack(spacing: 7) {
+                                StartGlyph(size: 17)
+                                Text("Start").font(.system(size: 12, weight: .medium))
+                            }.frame(width: 74, height: 40)
+                        }
+                        .buttonStyle(TileButtonStyle(selected: controller.popup == .start))
+                        .overlay { TileHoverGlow(hovered: startHovered) }
+                        .background(AppIconHoverAnchor(resolved: { _ in }, hoverChanged: { inside, _ in startHovered = inside }))
+                        .animation(.easeOut(duration: 0.14), value: startHovered)
+                        .help("Start — apps, places, and quick notes")
+                        .accessibilityLabel("Start")
+                        .accessibilityIdentifier("taskbar.start")
+                    }
                     if preferences.shows(.search) {
                     Button { controller.toggle(.launcher) } label: {
                         HStack(spacing: 9) {
@@ -77,7 +94,7 @@ struct TaskbarView: View {
                     .accessibilityLabel("Mission Control")
                     }
 
-                    if preferences.shows(.search) || preferences.shows(.missionControl) {
+                    if preferences.shows(.start) || preferences.shows(.search) || preferences.shows(.missionControl) {
                     taskbarSeparator
                     }
 
@@ -87,6 +104,7 @@ struct TaskbarView: View {
                             ForEach(Array(item.tiles.enumerated()), id: \.element.id) { memberIndex, tile in
                                 TaskbarAppButton(tile: tile, width: tile.special == nil ? layout.memberWidths[index][memberIndex] : 44,
                                                  applications: applications, preferences: preferences,
+                                                 artwork: tile.special == .appleMusic && music.playing == true ? music.artwork : nil,
                                                  grouped: item.isGroup, groupActive: groupActive,
                                                  ungroup: { if let group = windowGroups.group(for: tile) { windowGroups.ungroup(group) } },
                                                  canMoveLeft: index > 0, canMoveRight: index < items.count - 1,
@@ -228,6 +246,9 @@ struct TaskbarView: View {
         .alert("Unable to open application", isPresented: Binding(get: { applications.launchError != nil }, set: { if !$0 { applications.launchError = nil } })) {
             Button("OK") { applications.launchError = nil }
         } message: { Text(applications.launchError ?? "") }
+        .alert("Unable to complete action", isPresented: Binding(get: { applications.actionError != nil }, set: { if !$0 { applications.actionError = nil } })) {
+            Button("OK") { applications.actionError = nil }
+        } message: { Text(applications.actionError ?? "") }
     }
 
     private func groupedTogether(_ tiles: [TaskbarTile]) -> [TaskbarTile] {
@@ -265,7 +286,7 @@ struct TaskbarView: View {
     }
 
     private var tray: some View {
-        TaskbarTrayView(controller: controller, preferences: preferences, audio: audio, battery: battery,
+        TaskbarTrayView(controller: controller, preferences: preferences, audio: audio, battery: battery, cpu: cpu,
                         wifi: wifi, keyboard: keyboard, aiLimits: aiLimits)
     }
 }
@@ -275,6 +296,7 @@ private struct TaskbarAppButton: View {
     let width: CGFloat
     @ObservedObject var applications: ApplicationStore
     @ObservedObject var preferences: Preferences
+    let artwork: NSImage?
     let grouped: Bool
     let groupActive: Bool
     let ungroup: () -> Void
@@ -314,8 +336,10 @@ private struct TaskbarAppButton: View {
                     .background(.primary.opacity(0.035), in: RoundedRectangle(cornerRadius: 7))
                 } else {
                     VStack(spacing: 1) {
-                        Image(nsImage: item.icon).resizable().interpolation(.high)
+                        Image(nsImage: artwork ?? item.icon).resizable().interpolation(.high)
+                            .aspectRatio(contentMode: .fill)
                             .frame(width: grouped ? 28 : preferences.compact ? 30 : 34, height: grouped ? 28 : preferences.compact ? 30 : 34)
+                            .clipShape(RoundedRectangle(cornerRadius: artwork == nil ? 0 : 5, style: .continuous))
                         if !grouped && preferences.taskbarMode == .icons && preferences.showAppLabels {
                             Text(item.name).font(.system(size: 8)).lineLimit(1).frame(width: 44)
                         }
@@ -328,17 +352,7 @@ private struct TaskbarAppButton: View {
             }
         }
         .buttonStyle(TileButtonStyle(selected: active && !grouped, showsBackground: !grouped))
-        .overlay {
-            RoundedRectangle(cornerRadius: 8, style: .continuous)
-                .fill((colorScheme == .dark ? Color.white : Color.black).opacity(hovered ? (colorScheme == .dark ? 0.10 : 0.055) : 0))
-                .overlay {
-                    RoundedRectangle(cornerRadius: 8, style: .continuous)
-                        .strokeBorder((colorScheme == .dark ? Color.white : Color.black).opacity(hovered ? (colorScheme == .dark ? 0.24 : 0.12) : 0), lineWidth: 1)
-                }
-                .shadow(color: (colorScheme == .dark ? Color.white : Color.black).opacity(hovered ? (colorScheme == .dark ? 0.12 : 0.08) : 0), radius: 5)
-                .padding(2)
-                .allowsHitTesting(false)
-        }
+        .overlay { TileHoverGlow(hovered: hovered) }
         .background(AppIconHoverAnchor(resolved: { anchorView = $0 }, hoverChanged: { inside, frame in
             hovered = inside
             if tile.window == nil { hover(inside, frame) }
@@ -363,7 +377,7 @@ private struct TaskbarAppButton: View {
         .accessibilityValue(grouped ? "Grouped" : active ? "Active" : tile.window?.isMinimized == true ? "Minimized" : applications.isRunning(item.id) ? "Running" : "Pinned")
         .contextMenu {
             if grouped { Button("Ungroup windows", action: ungroup); Divider() }
-            ApplicationContextMenu(item: item, applications: applications, preferences: preferences, open: action)
+            ApplicationContextMenu(item: item, applications: applications, preferences: preferences, window: tile.window, open: action)
         }
         .accessibilityAction(named: "Move Left") { if canMoveLeft { moveBy(-1) } }
         .accessibilityAction(named: "Move Right") { if canMoveRight { moveBy(1) } }

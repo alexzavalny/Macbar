@@ -1,4 +1,5 @@
 import AppKit
+@preconcurrency import ApplicationServices
 import Combine
 
 @MainActor
@@ -7,6 +8,7 @@ final class ApplicationStore: ObservableObject {
     @Published private(set) var running: [NSRunningApplication] = []
     @Published private(set) var activeID: String?
     @Published var launchError: String?
+    @Published var actionError: String?
     @Published var recentIDs: [String] = []
 
     private var observations: [NSObjectProtocol] = []
@@ -102,10 +104,11 @@ final class ApplicationStore: ObservableObject {
             app.unhide()
             app.activate(options: [])
             if let window { TaskbarWindowActivation.raise(window) }
-        } else if let app = running.first(where: { $0.bundleIdentifier == item.id }) {
-            app.unhide()
-            app.activate(options: [.activateAllWindows])
         } else {
+            // Reopen running apps as well as launching stopped ones. Unlike
+            // activation alone, this lets apps such as Finder create a window
+            // when none is open, just as a Dock click does.
+            running.first(where: { $0.bundleIdentifier == item.id })?.unhide()
             let configuration = NSWorkspace.OpenConfiguration()
             configuration.activates = true
             NSWorkspace.shared.openApplication(at: item.url, configuration: configuration) { [weak self] _, error in
@@ -116,7 +119,66 @@ final class ApplicationStore: ObservableObject {
     }
 
     func quit(_ item: ApplicationItem) { running.first { $0.bundleIdentifier == item.id }?.terminate() }
+    func forceQuit(_ item: ApplicationItem, window: TaskbarWindow? = nil) {
+        let app = running.first { app in
+            app.bundleIdentifier == item.id && (window == nil || app.processIdentifier == window?.processID)
+        }
+        guard let app, app.forceTerminate() else {
+            actionError = "Couldn’t force quit \(item.name). The app may have already closed."
+            return
+        }
+    }
+
+    func closeWindow(_ item: ApplicationItem, window: TaskbarWindow? = nil) {
+        guard AXIsProcessTrusted() else {
+            actionError = "Allow Macbar to control your computer in System Settings → Privacy & Security → Accessibility to close windows."
+            return
+        }
+        guard let app = running.first(where: {
+            $0.bundleIdentifier == item.id && (window == nil || $0.processIdentifier == window?.processID)
+        }) else {
+            actionError = "Couldn’t find a running window for \(item.name)."
+            return
+        }
+        let processID = app.processIdentifier
+        let selectedElement = window?.element
+        let hasSelectedWindow = window != nil
+        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+            let application = AXUIElementCreateApplication(processID)
+            AXUIElementSetMessagingTimeout(application, 0.3)
+            func attribute(_ element: AXUIElement, _ name: String) -> AXUIElement? {
+                var value: CFTypeRef?
+                guard AXUIElementCopyAttributeValue(element, name as CFString, &value) == .success,
+                      let value, CFGetTypeID(value) == AXUIElementGetTypeID() else { return nil }
+                return (value as! AXUIElement)
+            }
+            let target = hasSelectedWindow ? selectedElement :
+                (attribute(application, kAXFocusedWindowAttribute) ?? attribute(application, kAXMainWindowAttribute))
+            let success: Bool
+            if let target {
+                AXUIElementSetMessagingTimeout(target, 0.3)
+                if let closeButton = attribute(target, kAXCloseButtonAttribute) {
+                    AXUIElementSetMessagingTimeout(closeButton, 0.3)
+                    success = AXUIElementPerformAction(closeButton, kAXPressAction as CFString) == .success
+                } else { success = false }
+            } else { success = false }
+            if !success {
+                Task { @MainActor [weak self] in
+                    self?.actionError = "Couldn’t close the window in \(item.name). It may already be closed or may not have a close button."
+                }
+            }
+        }
+    }
     func reveal(_ item: ApplicationItem) { NSWorkspace.shared.activateFileViewerSelecting([item.url]) }
+
+    func openFinderDestination(_ url: URL, name: String, finder: ApplicationItem) {
+        let configuration = NSWorkspace.OpenConfiguration()
+        configuration.activates = true
+        NSWorkspace.shared.open([url], withApplicationAt: finder.url, configuration: configuration) { [weak self] _, error in
+            guard let error else { return }
+            Task { @MainActor in self?.launchError = "Couldn’t open \(name): \(error.localizedDescription)" }
+        }
+    }
 
     func showDesktop() {
         if !hiddenApplications.isEmpty {

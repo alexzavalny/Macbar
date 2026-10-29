@@ -2,7 +2,7 @@ import AppKit
 import SwiftUI
 import Combine
 
-enum Popup: Equatable { case launcher, calendar, settings, wifi, volume, battery, aiLimits }
+enum Popup: Equatable { case start, launcher, calendar, settings, wifi, volume, battery, cpu, aiLimits }
 
 final class BarPanel: NSPanel {
     override var canBecomeKey: Bool { false }
@@ -44,6 +44,7 @@ final class TaskbarController: NSObject, ObservableObject {
     let windowManagement: WindowManagementStore
     let audio = AudioStore()
     let battery = BatteryStore()
+    let cpu = CPUStore()
     let wifi = WiFiStore()
     let keyboard = KeyboardInputStore()
     let aiLimits = AILimitsStore()
@@ -58,6 +59,7 @@ final class TaskbarController: NSObject, ObservableObject {
 
     private var bar: BarPanel?
     private var flyout: FlyoutPanel?
+    private var startHeight: CGFloat = 800
     private var statusItem: NSStatusItem?
     private var localMonitor: Any?
     private var globalMonitor: Any?
@@ -94,7 +96,7 @@ final class TaskbarController: NSObject, ObservableObject {
         panel.hasShadow = false
         panel.hidesOnDeactivate = false
         panel.isMovable = false
-        panel.contentView = TaskbarHostingView(rootView: TaskbarView(controller: self, applications: applications, preferences: preferences, audio: audio, battery: battery, wifi: wifi, keyboard: keyboard, aiLimits: aiLimits, windowTiles: windowTiles, windowGroups: windowGroups, music: music))
+        panel.contentView = TaskbarHostingView(rootView: TaskbarView(controller: self, applications: applications, preferences: preferences, audio: audio, battery: battery, cpu: cpu, wifi: wifi, keyboard: keyboard, aiLimits: aiLimits, windowTiles: windowTiles, windowGroups: windowGroups, music: music))
         bar = panel
         fullScreenCovered = FullScreenDetection.isMainDisplayCovered()
         isVisible = manuallyVisible && !fullScreenCovered
@@ -173,6 +175,9 @@ final class TaskbarController: NSObject, ObservableObject {
         panel.appearance = preferences.appearance.nsAppearance
         panel.onEscape = { [weak self] in self?.dismissPopup() }
         switch requested {
+        case .start:
+            applications.reloadCatalog()
+            panel.contentView = NSHostingView(rootView: StartFlyout(applications: applications, preferences: preferences, controller: self))
         case .launcher:
             applications.reloadCatalog()
             panel.contentView = NSHostingView(rootView: LauncherView(applications: applications, preferences: preferences, controller: self))
@@ -190,6 +195,8 @@ final class TaskbarController: NSObject, ObservableObject {
             })
         case .aiLimits:
             panel.contentView = NSHostingView(rootView: AILimitsFlyout(limits: aiLimits))
+        case .cpu:
+            panel.contentView = NSHostingView(rootView: CPUFlyout(cpu: cpu))
         case .battery:
             panel.contentView = NSHostingView(rootView: BatteryFlyout(battery: battery) { [weak self] in
                 self?.openSettings("com.apple.preference.battery")
@@ -366,6 +373,79 @@ final class TaskbarController: NSObject, ObservableObject {
         NSWorkspace.shared.open(URL(fileURLWithPath: "/System/Applications/Mission Control.app"))
     }
 
+    func openStartPlace(_ destination: FinderDestination) {
+        dismissPopup()
+        if let finder = applications.application(for: "com.apple.finder") {
+            applications.openFinderDestination(destination.url, name: destination.title, finder: finder)
+        } else {
+            applications.launchError = "Finder could not be found."
+        }
+    }
+
+    func openStartApplication(_ bundleID: String, name: String) {
+        guard let item = applications.application(for: bundleID) else {
+            dismissPopup()
+            applications.launchError = "\(name) could not be found on this Mac."
+            return
+        }
+        launch(item)
+    }
+
+    func showDesktop() {
+        dismissPopup()
+        applications.showDesktop()
+    }
+
+    func openDownload(_ file: RecentDownload) {
+        dismissPopup()
+        guard NSWorkspace.shared.open(file.url) else {
+            applications.launchError = "Couldn’t open \(file.name). It may have been moved or removed."
+            return
+        }
+    }
+
+    func revealDownload(_ file: RecentDownload) {
+        dismissPopup()
+        NSWorkspace.shared.activateFileViewerSelecting([file.url])
+    }
+
+    func openTrash() {
+        dismissPopup()
+        runFinderCommand("activate\nopen trash")
+    }
+
+    func emptyTrash() {
+        dismissPopup()
+        let alert = NSAlert()
+        alert.messageText = "Empty Trash?"
+        alert.informativeText = "Items in the Trash will be permanently deleted. This cannot be undone."
+        alert.alertStyle = .warning
+        alert.addButton(withTitle: "Cancel")
+        alert.addButton(withTitle: "Empty Trash")
+        alert.window.level = NSWindow.Level(rawValue: NSWindow.Level.statusBar.rawValue + 1)
+        NSApp.activate(ignoringOtherApps: true)
+        guard alert.runModal() == .alertSecondButtonReturn else { return }
+        runFinderCommand("empty trash")
+    }
+
+    private func runFinderCommand(_ command: String) {
+        DispatchQueue.global(qos: .userInitiated).async {
+            var error: NSDictionary?
+            let source = "tell application \"Finder\"\n\(command)\nend tell"
+            NSAppleScript(source: source)?.executeAndReturnError(&error)
+            guard let error, (error[NSAppleScript.errorNumber] as? Int) != -128 else { return }
+            let message = error[NSAppleScript.errorMessage] as? String ?? "Finder could not complete the request."
+            DispatchQueue.main.async {
+                let alert = NSAlert()
+                alert.messageText = "Could not use Trash"
+                alert.informativeText = message
+                alert.window.level = NSWindow.Level(rawValue: NSWindow.Level.statusBar.rawValue + 1)
+                NSApp.activate(ignoringOtherApps: true)
+                alert.runModal()
+            }
+        }
+    }
+
     func openSettings(_ pane: String) {
         dismissPopup()
         if let url = URL(string: "x-apple.systempreferences:\(pane)") { NSWorkspace.shared.open(url) }
@@ -374,13 +454,16 @@ final class TaskbarController: NSObject, ObservableObject {
     private func applyPreferences() {
         dismissPreviews()
         aiLimits.setEnabled(isVisible && preferences.shows(.aiLimits))
+        cpu.setEnabled(isVisible && preferences.shows(.cpu))
         let popupControl: TaskbarControl?
         switch popup {
+        case .start: popupControl = .start
         case .launcher: popupControl = .search
         case .calendar: popupControl = .clock
         case .wifi: popupControl = .wifi
         case .volume: popupControl = .sound
         case .battery: popupControl = .battery
+        case .cpu: popupControl = .cpu
         case .aiLimits: popupControl = .aiLimits
         default: popupControl = nil
         }
@@ -391,6 +474,14 @@ final class TaskbarController: NSObject, ObservableObject {
         positionWindows()
     }
 
+    func fitStart(to height: CGFloat) {
+        guard popup == .start, height.isFinite, height > 0 else { return }
+        let fitted = height.rounded(.up)
+        guard fitted != startHeight else { return }
+        startHeight = fitted
+        positionWindows()
+    }
+
     private func positionWindows() {
         guard let screen else { return }
         bar?.setFrame(BarGeometry.frame(on: screen.frame, height: preferences.barHeight), display: true)
@@ -398,18 +489,20 @@ final class TaskbarController: NSObject, ObservableObject {
         if let popup {
             let size: CGSize
             switch popup {
+            case .start: size = CGSize(width: 600, height: startHeight)
             case .launcher: size = CGSize(width: 640, height: 600)
             case .calendar: size = CGSize(width: 360, height: 442)
             case .settings: size = CGSize(width: 370, height: 640)
             case .wifi: size = CGSize(width: 370, height: 460)
             case .volume: size = CGSize(width: 360, height: 250)
             case .battery: size = CGSize(width: 320, height: 210)
+            case .cpu: size = CGSize(width: 320, height: 345)
             case .aiLimits: size = CGSize(width: 390, height: 560)
             }
             let usable = CGRect(x: screen.frame.minX, y: screen.frame.minY,
                                 width: screen.frame.width, height: screen.visibleFrame.maxY - screen.frame.minY)
             flyout?.setFrame(BarGeometry.popupFrame(screen: usable, barHeight: preferences.barHeight, size: size,
-                alignment: popup == .launcher ? (preferences.alignment == .left ? .left : .center) : .right), display: true)
+                alignment: popup == .start || popup == .launcher ? (preferences.alignment == .left ? .left : .center) : .right), display: true)
         }
     }
 
@@ -457,6 +550,7 @@ final class TaskbarController: NSObject, ObservableObject {
         dismissPopup()
         isVisible = visible
         aiLimits.setEnabled(isVisible && preferences.shows(.aiLimits))
+        cpu.setEnabled(isVisible && preferences.shows(.cpu))
         refreshWindowTiles()
         if isVisible { bar?.orderFrontRegardless() } else { bar?.orderOut(nil) }
         windowManagement.updateTaskbar(frame: isVisible ? bar?.frame : nil)

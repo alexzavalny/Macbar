@@ -39,7 +39,7 @@ struct AILimitsFlyout: View {
                     .buttonStyle(.plain).font(.system(size: 10)).foregroundStyle(Color.accentColor)
             }
             if let snapshot = state.snapshot {
-                if state.error != nil { Text("Last known limits").font(.system(size: 10)).foregroundStyle(.secondary) }
+                if state.isStale() { Text("Last known limits").font(.system(size: 10)).foregroundStyle(.secondary) }
                 ForEach(snapshot.windows) { window in
                     VStack(alignment: .leading, spacing: 5) {
                         HStack {
@@ -90,17 +90,22 @@ struct AILimitsTrayLabel: View {
                     Text(summary(provider)).monospacedDigit().frame(width: 30, alignment: .leading)
                 }.font(.system(size: 10, weight: .medium))
                     .accessibilityElement(children: .ignore)
-                    .accessibilityLabel("\(provider.title), \(summary(provider)) remaining")
-                    .help("\(provider.title) · \(summary(provider)) remaining")
+                    .accessibilityLabel(description(provider))
+                    .help(description(provider))
             }
         }.padding(.horizontal, 4).frame(width: 56, height: 40)
     }
 
     private func summary(_ provider: AIProvider) -> String {
         let state = limits.state(for: provider)
-        guard state.error == nil, let snapshot = state.snapshot, let remaining = snapshot.remainingPercent,
-              snapshot.summaryWindows.allSatisfy({ $0.resetsAt.map { $0 > Date() } ?? true }) else { return "—" }
+        guard let remaining = state.summaryPercent(for: provider) else { return "—" }
         return "\(Int(remaining.rounded(.down)))%"
+    }
+
+    private func description(_ provider: AIProvider) -> String {
+        let state = limits.state(for: provider)
+        let stale = provider == .claude && state.isStale() ? ", last known" : ""
+        return "\(provider.title), \(summary(provider)) remaining\(stale)"
     }
 }
 

@@ -27,18 +27,21 @@ enum TaskbarMode: String, CaseIterable, Identifiable {
 }
 
 enum TaskbarControl: String, CaseIterable, Identifiable {
-    case inputLanguage, wifi, sound, battery, clock, search, missionControl, aiLimits
+    case start, inputLanguage, wifi, sound, battery, cpu, clock, search, missionControl, aiLimits, trash
     var id: String { rawValue }
     var title: String {
         switch self {
+        case .start: return "Start"
         case .inputLanguage: return "Input Language"
         case .wifi: return "Wi-Fi"
         case .sound: return "Sound"
         case .battery: return "Battery"
+        case .cpu: return "CPU"
         case .clock: return "Clock"
         case .search: return "Search"
         case .missionControl: return "Mission Control"
         case .aiLimits: return "AI Limits"
+        case .trash: return "Trash"
         }
     }
 }
@@ -61,6 +64,7 @@ final class Preferences: ObservableObject {
     @Published var showAppLabels: Bool { didSet { defaults.set(showAppLabels, forKey: "showAppLabels") } }
     @Published var keepWindowsAboveTaskbar: Bool { didSet { defaults.set(keepWindowsAboveTaskbar, forKey: "keepWindowsAboveTaskbar") } }
     @Published var pinnedIDs: [String] { didSet { defaults.set(pinnedIDs, forKey: "pinnedIDs") } }
+    @Published var startQuickNote: String { didSet { defaults.set(startQuickNote, forKey: "startQuickNote") } }
     @Published private(set) var taskbarAppOrder: [String] { didSet { defaults.set(taskbarAppOrder, forKey: "taskbarAppOrder") } }
     @Published private(set) var trayOrder: [TrayItem] { didSet { defaults.set(trayOrder.map(\.rawValue), forKey: "trayOrder") } }
     @Published private(set) var drawerItems: Set<String> { didSet { defaults.set(drawerItems.sorted(), forKey: "trayDrawerItems") } }
@@ -80,6 +84,7 @@ final class Preferences: ObservableObject {
         showAppLabels = defaults.bool(forKey: "showAppLabels")
         keepWindowsAboveTaskbar = defaults.object(forKey: "keepWindowsAboveTaskbar") as? Bool ?? true
         pinnedIDs = defaults.stringArray(forKey: "pinnedIDs") ?? Self.defaultPins
+        startQuickNote = defaults.string(forKey: "startQuickNote") ?? ""
         taskbarAppOrder = defaults.stringArray(forKey: "taskbarAppOrder") ?? []
         trayOrder = TrayItem.normalized(defaults.stringArray(forKey: "trayOrder") ?? [])
         drawerItems = Set((defaults.stringArray(forKey: "trayDrawerItems") ?? []).compactMap { TrayItem(rawValue: $0)?.rawValue })
@@ -110,7 +115,7 @@ final class Preferences: ObservableObject {
     }
 
     func trayWidth(hasBattery: Bool) -> CGFloat {
-        let widths: [(TaskbarControl, CGFloat)] = [(.inputLanguage, 38), (.wifi, 28), (.sound, 28), (.clock, 88), (.aiLimits, 56)]
+        let widths: [(TaskbarControl, CGFloat)] = [(.inputLanguage, 38), (.wifi, 28), (.sound, 28), (.clock, 88), (.aiLimits, 56), (.cpu, 58), (.trash, 28)]
         let visible = widths.filter { shows($0.0) && !drawerItems.contains($0.0.rawValue) }
         let settingsWidth: CGFloat = isInDrawer(.settings) ? 0 : 30
         return 28 + settingsWidth + visible.reduce(0) { $0 + $1.1 + 2 } + (hasBattery && shows(.battery) && !isInDrawer(.battery) ? 34 : 0)

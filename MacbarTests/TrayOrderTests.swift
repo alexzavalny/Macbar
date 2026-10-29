@@ -5,15 +5,15 @@ final class TrayOrderTests: XCTestCase {
     func testMovingDifferentWidthControlsInBothDirections() {
         let original = TrayItem.allCases
         let moved = TrayItem.moving(.clock, relativeTo: .inputLanguage, after: false, in: original)
-        XCTAssertEqual(moved, [.aiLimits, .clock, .inputLanguage, .wifi, .sound, .battery, .settings])
-        XCTAssertEqual(TrayItem.moving(.clock, relativeTo: .battery, after: true, in: moved), original)
+        XCTAssertEqual(moved, [.aiLimits, .clock, .inputLanguage, .wifi, .sound, .battery, .cpu, .trash, .settings])
+        XCTAssertEqual(TrayItem.moving(.clock, relativeTo: .cpu, after: true, in: moved), original)
         XCTAssertEqual(TrayItem.moving(.settings, relativeTo: .aiLimits, after: false, in: original).first, .settings)
         XCTAssertEqual(TrayItem.moving(.aiLimits, relativeTo: .settings, after: true, in: original).last, .aiLimits)
     }
 
     func testNormalizationHandlesUnknownDuplicateAndNewControls() {
         let order = TrayItem.normalized(["settings", "sound", "settings", "future-control", "search"])
-        XCTAssertEqual(order, [.settings, .sound, .aiLimits, .inputLanguage, .wifi, .battery, .clock])
+        XCTAssertEqual(order, [.settings, .sound, .aiLimits, .inputLanguage, .wifi, .battery, .cpu, .clock, .trash])
         XCTAssertEqual(Set(order), Set(TrayItem.allCases))
         XCTAssertEqual(TrayItem.moving(.wifi, relativeTo: .wifi, after: true, in: order), order)
         XCTAssertEqual(TrayItem.moving(.wifi, relativeTo: .clock, after: false, in: [.wifi]), [.wifi])
@@ -43,7 +43,7 @@ final class TrayOrderTests: XCTestCase {
             let reordered = TrayItem.moving(.wifi, relativeTo: .aiLimits, after: false, in: preferences.trayOrder)
             preferences.rememberTrayOrder(reordered)
             preferences.setVisible(true, for: .battery)
-            XCTAssertEqual(preferences.trayOrder, [.wifi, .aiLimits, .inputLanguage, .sound, .battery, .clock, .settings])
+            XCTAssertEqual(preferences.trayOrder, [.wifi, .aiLimits, .inputLanguage, .sound, .battery, .cpu, .clock, .trash, .settings])
         }
     }
 

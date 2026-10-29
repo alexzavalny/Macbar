@@ -99,7 +99,7 @@ final class WindowGroupTests: XCTestCase {
                 iconWidths: [88] + Array(repeating: 44, count: extra),
                 memberPreferredWidths: [[110, 190]] + Array(repeating: [200], count: extra),
                 memberTitledTiles: [[true, true]] + Array(repeating: [true], count: extra),
-                trayWidth: 244, showSearch: false, showMissionControl: false)
+                trayWidth: 244, showSearch: false, showMissionControl: false, showStart: false)
         }
         let spacious = layout(1440)
         XCTAssertEqual(spacious.memberWidths[0], [110, 190])

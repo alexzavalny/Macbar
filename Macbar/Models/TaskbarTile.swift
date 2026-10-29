@@ -153,9 +153,10 @@ struct TaskbarStripLayout {
     let capacity: Int
     private let searchVisible: Bool
     private let missionControlVisible: Bool
+    private let startVisible: Bool
 
     var headerWidth: CGFloat {
-        Self.headerWidth(search: searchVisible, searchLabel: showsSearchLabel, missionControl: missionControlVisible)
+        Self.headerWidth(start: startVisible, search: searchVisible, searchLabel: showsSearchLabel, missionControl: missionControlVisible)
     }
     var tilesWidth: CGFloat { tileWidths.reduce(0, +) + CGFloat(max(0, capacity - 1)) * 4 }
 
@@ -163,7 +164,8 @@ struct TaskbarStripLayout {
          titledTiles: [Bool]? = nil, iconWidths: [CGFloat]? = nil,
          memberPreferredWidths: [[CGFloat]]? = nil, memberTitledTiles: [[Bool]]? = nil,
          memberIconWidths: [[CGFloat]]? = nil,
-         trayWidth: CGFloat = Self.trayWidth, showSearch: Bool = true, showMissionControl: Bool = true) {
+         trayWidth: CGFloat = Self.trayWidth, showSearch: Bool = true, showMissionControl: Bool = true, showStart: Bool = true) {
+        startVisible = showStart
         searchVisible = showSearch
         missionControlVisible = showMissionControl
         let count = preferredWidths.count
@@ -185,7 +187,7 @@ struct TaskbarStripLayout {
         }
         let widths = memberDesired.map { $0.reduce(0, +) }
         let desired = widths.reduce(0, +) + gaps
-        let initialHeader = Self.headerWidth(search: showSearch, searchLabel: screenWidth >= 1100, missionControl: showMissionControl)
+        let initialHeader = Self.headerWidth(start: showStart, search: showSearch, searchLabel: screenWidth >= 1100, missionControl: showMissionControl)
         let centeredBudget = max(0, screenWidth - trayWidth * 2 - 24)
         centered = alignment == .center && initialHeader + desired <= centeredBudget
         availableWidth = max(0, screenWidth - (centered ? trayWidth * 2 + 24 : trayWidth + 24))
@@ -194,7 +196,7 @@ struct TaskbarStripLayout {
         }
         let readableMinimum = minimumWidths.reduce(0, +)
         showsSearchLabel = showSearch && screenWidth >= 1100 && initialHeader + readableMinimum + gaps <= availableWidth
-        let budget = max(0, availableWidth - Self.headerWidth(search: showSearch, searchLabel: showsSearchLabel, missionControl: showMissionControl))
+        let budget = max(0, availableWidth - Self.headerWidth(start: showStart, search: showSearch, searchLabel: showsSearchLabel, missionControl: showMissionControl))
 
         if desired <= budget {
             capacity = count
@@ -240,9 +242,10 @@ struct TaskbarStripLayout {
         }
     }
 
-    private static func headerWidth(search: Bool, searchLabel: Bool, missionControl: Bool) -> CGFloat {
-        guard search || missionControl else { return 0 }
-        return (search ? (searchLabel ? 115 : 34) : 0) + (missionControl ? 40 : 0)
-            + (search && missionControl ? 4 : 0) + 23
+    private static func headerWidth(start: Bool, search: Bool, searchLabel: Bool, missionControl: Bool) -> CGFloat {
+        let buttons = [start, search, missionControl].filter { $0 }.count
+        guard buttons > 0 else { return 0 }
+        return (start ? 74 : 0) + (search ? (searchLabel ? 115 : 34) : 0) + (missionControl ? 40 : 0)
+            + CGFloat(buttons - 1) * 4 + 23
     }
 }

@@ -1,7 +1,7 @@
 import Foundation
 
 enum TrayItem: String, CaseIterable, Identifiable {
-    case aiLimits, inputLanguage, wifi, sound, battery, clock, settings
+    case aiLimits, inputLanguage, wifi, sound, battery, cpu, clock, trash, settings
 
     var id: String { rawValue }
     var control: TaskbarControl? { TaskbarControl(rawValue: rawValue) }

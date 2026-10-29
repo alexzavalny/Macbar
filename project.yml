@@ -29,7 +29,7 @@ targets:
         NSHighResolutionCapable: true
         NSLocationUsageDescription: "Macbar needs Location permission to display nearby Wi-Fi network names. Your location is not recorded or shared."
         NSLocationWhenInUseUsageDescription: "Macbar needs Location permission to display nearby Wi-Fi network names. Your location is not recorded or shared."
-        NSAppleEventsUsageDescription: "Macbar needs permission to control playback in Music."
+        NSAppleEventsUsageDescription: "Macbar needs permission to control Music playback and open or empty Trash in Finder."
         NSPrincipalClass: NSApplication
         NSHumanReadableCopyright: "Copyright © 2026 Macbar"
     settings:

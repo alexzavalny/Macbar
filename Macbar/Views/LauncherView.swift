@@ -29,6 +29,9 @@ struct LauncherView: View {
         .onAppear {
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) { searchFocused = true }
         }
+        .alert("Unable to complete action", isPresented: Binding(get: { applications.actionError != nil }, set: { if !$0 { applications.actionError = nil } })) {
+            Button("OK") { applications.actionError = nil }
+        } message: { Text(applications.actionError ?? "") }
     }
 
     private var searchField: some View {
