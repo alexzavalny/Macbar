@@ -6,6 +6,7 @@ struct LauncherView: View {
     @ObservedObject var controller: TaskbarController
     @State private var query = ""
     @State private var showAll = false
+    @State private var selection = ApplicationSearchSelection()
     @FocusState private var searchFocused: Bool
 
     private var results: [ApplicationItem] {
@@ -29,32 +30,25 @@ struct LauncherView: View {
         .onAppear {
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) { searchFocused = true }
         }
+        .onChange(of: query) { _, _ in selection.reset(in: results) }
+        .onChange(of: results.map(\.id)) { _, _ in selection.reconcile(results) }
+        .onChange(of: showAll) { _, _ in selection.reconcile(results) }
         .alert("Unable to complete action", isPresented: Binding(get: { applications.actionError != nil }, set: { if !$0 { applications.actionError = nil } })) {
             Button("OK") { applications.actionError = nil }
         } message: { Text(applications.actionError ?? "") }
     }
 
     private var searchField: some View {
-        HStack(spacing: 10) {
-            Image(systemName: "magnifyingglass").foregroundStyle(.secondary).font(.system(size: 15))
-            TextField("Search your apps", text: $query)
-                .textFieldStyle(.plain).font(.system(size: 14))
-                .focused($searchFocused)
-                .onSubmit { if let first = results.first { controller.launch(first) } }
-                .accessibilityLabel("Search your apps")
-            if !query.isEmpty {
-                Button { query = ""; searchFocused = true } label: {
-                    Image(systemName: "xmark.circle.fill").foregroundStyle(.tertiary)
-                }.buttonStyle(.plain).accessibilityLabel("Clear search")
+        ApplicationSearchField(query: $query, focused: $searchFocused, move: { offset in
+            if !searching && !showAll {
+                showAll = true
+                selection.reset(in: results)
+            } else {
+                selection.move(by: offset, in: results)
             }
-        }
-        .padding(.horizontal, 14).frame(height: 44)
-        .background(.background.opacity(0.66), in: RoundedRectangle(cornerRadius: 8))
-        .overlay(alignment: .bottom) {
-            UnevenRoundedRectangle(bottomLeadingRadius: 2, bottomTrailingRadius: 2)
-                .fill(Color.accentColor).frame(height: 2).padding(.horizontal, 6)
-        }
-        .overlay { RoundedRectangle(cornerRadius: 8).strokeBorder(.primary.opacity(0.06)) }
+        }, submit: {
+            if let item = selection.selected(in: results) { controller.launch(item) }
+        })
     }
 
     private var home: some View {
@@ -125,26 +119,8 @@ struct LauncherView: View {
             if results.isEmpty {
                 ContentUnavailableView.search(text: query).frame(maxHeight: .infinity)
             } else {
-                ScrollView {
-                    LazyVStack(spacing: 3) {
-                        ForEach(results) { item in
-                            Button { controller.launch(item) } label: {
-                                HStack(spacing: 13) {
-                                    Image(nsImage: item.icon).resizable().frame(width: 34, height: 34)
-                                    VStack(alignment: .leading, spacing: 3) {
-                                        Text(item.name).font(.system(size: 13, weight: .medium))
-                                        Text("Application").font(.system(size: 10)).foregroundStyle(.secondary)
-                                    }
-                                    Spacer()
-                                    if applications.isRunning(item.id) { Circle().fill(Color.accentColor).frame(width: 5, height: 5) }
-                                    Image(systemName: "arrow.up.left").font(.system(size: 11)).foregroundStyle(.tertiary)
-                                }.padding(.horizontal, 14).padding(.vertical, 7).frame(maxWidth: .infinity)
-                            }
-                            .buttonStyle(TileButtonStyle())
-                            .contextMenu { ApplicationContextMenu(item: item, applications: applications, preferences: preferences) { controller.launch(item) } }
-                        }
-                    }
-                }.scrollIndicators(.hidden)
+                ApplicationSearchResults(results: results, selectedID: selection.selectedID,
+                    applications: applications, preferences: preferences, launch: controller.launch)
             }
         }.padding(.horizontal, 24).frame(maxHeight: .infinity).padding(.bottom, 18)
     }
@@ -179,5 +155,76 @@ struct LauncherView: View {
         .padding(.horizontal, 32).padding(.vertical, 16)
         .background(.primary.opacity(0.035))
         .overlay(alignment: .top) { Rectangle().fill(.primary.opacity(0.055)).frame(height: 1) }
+    }
+}
+
+struct ApplicationSearchField: View {
+    @Binding var query: String
+    var focused: FocusState<Bool>.Binding
+    let move: (Int) -> Void
+    let submit: () -> Void
+
+    var body: some View {
+        HStack(spacing: 10) {
+            Image(systemName: "magnifyingglass").foregroundStyle(.secondary).font(.system(size: 15))
+            TextField("Search your apps", text: $query)
+                .textFieldStyle(.plain).font(.system(size: 14))
+                .focused(focused)
+                .onKeyPress(.upArrow, phases: [.down, .repeat]) { _ in move(-1); return .handled }
+                .onKeyPress(.downArrow, phases: [.down, .repeat]) { _ in move(1); return .handled }
+                .onSubmit(submit)
+                .accessibilityLabel("Search your apps")
+            if !query.isEmpty {
+                Button { query = ""; focused.wrappedValue = true } label: {
+                    Image(systemName: "xmark.circle.fill").foregroundStyle(.tertiary)
+                }.buttonStyle(.plain).accessibilityLabel("Clear search")
+            }
+        }
+        .padding(.horizontal, 14).frame(height: 44)
+        .background(.background.opacity(0.66), in: RoundedRectangle(cornerRadius: 8))
+        .overlay(alignment: .bottom) {
+            UnevenRoundedRectangle(bottomLeadingRadius: 2, bottomTrailingRadius: 2)
+                .fill(Color.accentColor).frame(height: 2).padding(.horizontal, 6)
+        }
+        .overlay { RoundedRectangle(cornerRadius: 8).strokeBorder(.primary.opacity(0.06)) }
+    }
+}
+
+struct ApplicationSearchResults: View {
+    let results: [ApplicationItem]
+    let selectedID: String?
+    @ObservedObject var applications: ApplicationStore
+    @ObservedObject var preferences: Preferences
+    let launch: (ApplicationItem) -> Void
+
+    var body: some View {
+        ScrollViewReader { scroll in
+            ScrollView {
+                LazyVStack(spacing: 3) {
+                    ForEach(results) { item in
+                        Button { launch(item) } label: {
+                            HStack(spacing: 13) {
+                                Image(nsImage: item.icon).resizable().frame(width: 34, height: 34)
+                                VStack(alignment: .leading, spacing: 3) {
+                                    Text(item.name).font(.system(size: 13, weight: .medium))
+                                    Text("Application").font(.system(size: 10)).foregroundStyle(.secondary)
+                                }
+                                Spacer()
+                                if applications.isRunning(item.id) { Circle().fill(Color.accentColor).frame(width: 5, height: 5) }
+                                Image(systemName: "arrow.up.left").font(.system(size: 11)).foregroundStyle(.tertiary)
+                            }.padding(.horizontal, 14).padding(.vertical, 7).frame(maxWidth: .infinity)
+                        }
+                        .buttonStyle(TileButtonStyle(selected: selectedID == item.id))
+                        .accessibilityValue(selectedID == item.id ? "Selected" : "")
+                        .contextMenu { ApplicationContextMenu(item: item, applications: applications, preferences: preferences) { launch(item) } }
+                        .id(item.id)
+                    }
+                }
+            }
+            .scrollIndicators(.hidden)
+            .onChange(of: selectedID, initial: true) { _, id in
+                if let id { scroll.scrollTo(id) }
+            }
+        }
     }
 }

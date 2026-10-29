@@ -1,5 +1,5 @@
 import AppKit
-import ApplicationServices
+@preconcurrency import ApplicationServices
 import Combine
 
 struct TaskbarWindowProcess {
@@ -103,7 +103,8 @@ final class AccessibilityTaskbarWindowProvider: TaskbarWindowProviding, @uncheck
                         let id = known[process.id]?.first { CFEqual($0.element, element) }?.id ?? UUID()
                         let previous = snapshots[process.id]?.first { $0.id == id }
                         next[process.id, default: []].append((element, id))
-                        let frame = readFrame(element) ?? previous?.frame
+                        // Minimized windows stay on the display that held their normal frame.
+                        let frame = minimized == true ? (previous?.frame ?? readFrame(element)) : (readFrame(element) ?? previous?.frame)
                         let title = readAttribute(element, kAXTitleAttribute) as? String ?? previous?.title ?? ""
                         result.append(TaskbarWindow(id: id, bundleID: process.bundleID, processID: process.id,
                             title: title,
@@ -145,9 +146,48 @@ final class AccessibilityTaskbarWindowProvider: TaskbarWindowProviding, @uncheck
 }
 
 enum TaskbarWindowActivation {
+    enum ClickResult {
+        case minimized, restore
+        case failed(String)
+    }
+
+    private static let queue = DispatchQueue(label: "studio.macbar.window-activation", qos: .userInitiated)
+
+    static func click(_ window: TaskbarWindow) async -> ClickResult {
+        guard AXIsProcessTrusted() else {
+            return .failed("Allow Macbar in System Settings → Privacy & Security → Accessibility to minimize and restore windows.")
+        }
+        guard let element = window.element else { return .failed("This window is no longer available.") }
+        return await withCheckedContinuation { continuation in
+            queue.async {
+                let application = AXUIElementCreateApplication(window.processID)
+                AXUIElementSetMessagingTimeout(application, 0.2)
+                AXUIElementSetMessagingTimeout(element, 0.2)
+                var minimized: CFTypeRef?
+                guard AXUIElementCopyAttributeValue(element, kAXMinimizedAttribute as CFString, &minimized) == .success else {
+                    continuation.resume(returning: .failed("Couldn’t read this window. It may have closed or stopped responding."))
+                    return
+                }
+                var frontmost: CFTypeRef?
+                var focused: CFTypeRef?
+                AXUIElementCopyAttributeValue(application, kAXFrontmostAttribute as CFString, &frontmost)
+                AXUIElementCopyAttributeValue(application, kAXFocusedWindowAttribute as CFString, &focused)
+                // Recheck the live AX state: the tile snapshot may predate the last click.
+                if minimized as? Bool == false, frontmost as? Bool == true,
+                   let focused, CFEqual(focused, element) {
+                    let result = AXUIElementSetAttributeValue(element, kAXMinimizedAttribute as CFString, kCFBooleanTrue)
+                    continuation.resume(returning: result == .success ? .minimized :
+                        .failed("Couldn’t minimize this window. The app may not support minimizing it."))
+                } else {
+                    continuation.resume(returning: .restore)
+                }
+            }
+        }
+    }
+
     static func raise(_ window: TaskbarWindow) {
         guard AXIsProcessTrusted(), let element = window.element else { return }
-        DispatchQueue.global(qos: .userInitiated).async {
+        queue.async {
             AXUIElementSetMessagingTimeout(element, 0.2)
             let application = AXUIElementCreateApplication(window.processID)
             AXUIElementSetMessagingTimeout(application, 0.2)

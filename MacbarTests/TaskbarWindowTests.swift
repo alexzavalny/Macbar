@@ -151,19 +151,56 @@ final class TaskbarWindowTests: XCTestCase {
         hidden.isOnScreen = false
         var minimized = window("Minimized", minimized: true)
         minimized.frame = here.frame
+        minimized.isOnScreen = false
         let windows = [here, there, hidden, minimized]
         let apps = [app("editor"), app("browser"), app("pinned")]
         let mainTiles = TaskbarTile.make(apps: apps, windows: windows, mode: .windows,
                                         display: primary, pinnedIDs: ["pinned"])
         let upperTiles = TaskbarTile.make(apps: apps, windows: windows, mode: .windows,
                                          display: upper, pinnedIDs: ["pinned"])
-        XCTAssertEqual(mainTiles.map(\.title), ["Main", "pinned"])
+        XCTAssertEqual(mainTiles.map(\.title), ["Main", "Minimized", "pinned"])
         XCTAssertEqual(upperTiles.map(\.title), ["Upper display", "pinned"])
+        let withoutMinimized = TaskbarTile.make(apps: apps, windows: windows, mode: .windows,
+            display: primary, pinnedIDs: ["pinned"], includeMinimized: false)
+        XCTAssertEqual(withoutMinimized.map(\.title), ["Main", "pinned"])
         XCTAssertFalse(mainTiles.last!.showsTitle(mode: .windows, isRunning: true))
         let empty = TaskbarTile.make(apps: apps, windows: windows, mode: .windows,
                                     display: CGRect(x: 4000, y: 0, width: 1000, height: 1000), pinnedIDs: ["editor"])
         XCTAssertEqual(empty.map(\.id), ["app:editor"])
         XCTAssertFalse(empty[0].showsTitle(mode: .windows, isRunning: true))
+    }
+
+    func testMinimizingKeepsTileIdentityPositionAndTheLastNormalDisplayFrame() async {
+        let element = AXUIElementCreateApplication(100001)
+        let normalFrame = CGRect(x: -600, y: -1300, width: 900, height: 700)
+        var minimized = false
+        let provider = AccessibilityTaskbarWindowProvider(readAttribute: { _, name in
+            switch name {
+            case kAXWindowsAttribute: return [element] as CFArray
+            case kAXSubroleAttribute: return kAXStandardWindowSubrole as CFString
+            case kAXTitleAttribute: return "Document" as CFString
+            case kAXMinimizedAttribute: return minimized ? kCFBooleanTrue : kCFBooleanFalse
+            case kAXPositionAttribute:
+                var point = minimized ? CGPoint.zero : normalFrame.origin
+                return AXValueCreate(.cgPoint, &point)
+            case kAXSizeAttribute:
+                var size = minimized ? CGSize(width: 100, height: 50) : normalFrame.size
+                return AXValueCreate(.cgSize, &size)
+            default: return nil
+            }
+        })
+        let processes = [TaskbarWindowProcess(id: 123, bundleID: "editor")]
+        let original = await provider.windows(for: processes, frontmostPID: nil)
+        minimized = true
+        let hidden = await provider.windows(for: processes, frontmostPID: nil)
+        XCTAssertEqual(hidden.first?.id, original.first?.id)
+        XCTAssertEqual(hidden.first?.frame, normalFrame)
+        let display = CGRect(x: -701, y: -1440, width: 2560, height: 1440)
+        let originalTiles = TaskbarTile.make(apps: [app("editor")], windows: original, mode: .windows)
+        let minimizedTiles = TaskbarTile.make(apps: [app("editor")], windows: hidden, mode: .windows, display: display)
+        XCTAssertEqual(minimizedTiles.map(\.id), originalTiles.map(\.id))
+        XCTAssertTrue(minimizedTiles.first?.window?.isMinimized == true)
+        XCTAssertFalse(hidden[0].isVisible(on: CGRect(x: 0, y: 0, width: 1440, height: 900)))
     }
 
     func testSpanningWindowsAppearOnBothDisplaysButTouchingEdgesDoesNotCount() {
@@ -194,6 +231,9 @@ final class TaskbarWindowTests: XCTestCase {
         let preferences = Preferences(defaults: defaults)
         XCTAssertEqual(preferences.taskbarMode, .icons)
         XCTAssertFalse(preferences.separateMultipleWindows)
+        XCTAssertTrue(preferences.showMinimizedWindows)
+        preferences.showMinimizedWindows = false
+        XCTAssertFalse(Preferences(defaults: defaults).showMinimizedWindows)
         preferences.separateMultipleWindows = true
         XCTAssertTrue(Preferences(defaults: defaults).separateMultipleWindows)
         preferences.taskbarMode = .windows

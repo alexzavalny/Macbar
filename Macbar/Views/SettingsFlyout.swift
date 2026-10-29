@@ -44,12 +44,18 @@ struct SettingsFlyout: View {
                         Toggle("Separate apps with multiple windows", isOn: $preferences.separateMultipleWindows)
                             .toggleStyle(.switch).controlSize(.small).font(.system(size: 12))
                         if preferences.separateMultipleWindows {
-                            Text("Show a titled tile for each window when an app has two or more windows, including minimized windows.")
+                            Text("Show a titled tile for each window when an app has two or more windows.")
                                 .font(.system(size: 11)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
                         }
                     }
                     if preferences.taskbarMode == .windows {
-                        Text("One tile per window, with its title beside the icon. Includes minimized windows.")
+                        Text("One tile per window, with its title beside the icon.")
+                            .font(.system(size: 11)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                    }
+                    if preferences.usesWindowTiles {
+                        Toggle("Show minimized windows", isOn: $preferences.showMinimizedWindows)
+                            .toggleStyle(.switch).controlSize(.small).font(.system(size: 12))
+                        Text(preferences.showMinimizedWindows ? "Minimized windows stay on their last display. Click their tile to restore them." : "Minimized windows are hidden from the taskbar.")
                             .font(.system(size: 11)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
                     }
                     if preferences.usesWindowTiles && !windowManagement.hasAccessibilityAccess {

@@ -58,6 +58,7 @@ final class Preferences: ObservableObject {
     @Published var alignment: TaskbarAlignment { didSet { defaults.set(alignment.rawValue, forKey: "alignment") } }
     @Published var taskbarMode: TaskbarMode { didSet { defaults.set(taskbarMode.rawValue, forKey: "taskbarMode") } }
     @Published var separateMultipleWindows: Bool { didSet { defaults.set(separateMultipleWindows, forKey: "separateMultipleWindows") } }
+    @Published var showMinimizedWindows: Bool { didSet { defaults.set(showMinimizedWindows, forKey: "showMinimizedWindows") } }
     var usesWindowTiles: Bool { taskbarMode == .windows || separateMultipleWindows }
     @Published var hideDockWhileRunning: Bool { didSet { defaults.set(hideDockWhileRunning, forKey: "hideDockWhileRunning") } }
     @Published var compact: Bool { didSet { defaults.set(compact, forKey: "compact") } }
@@ -79,6 +80,7 @@ final class Preferences: ObservableObject {
         alignment = TaskbarAlignment(rawValue: defaults.string(forKey: "alignment") ?? "center") ?? .center
         taskbarMode = TaskbarMode(rawValue: defaults.string(forKey: "taskbarMode") ?? "icons") ?? .icons
         separateMultipleWindows = defaults.bool(forKey: "separateMultipleWindows")
+        showMinimizedWindows = defaults.object(forKey: "showMinimizedWindows") as? Bool ?? true
         hideDockWhileRunning = defaults.bool(forKey: "hideDockWhileRunning")
         compact = defaults.bool(forKey: "compact")
         showAppLabels = defaults.bool(forKey: "showAppLabels")

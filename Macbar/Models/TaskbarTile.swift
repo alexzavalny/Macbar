@@ -12,8 +12,8 @@ struct TaskbarWindow: Identifiable, Equatable {
     var frame: CGRect? = nil
     var isOnScreen = true
 
-    func isVisible(on display: CGRect) -> Bool {
-        guard isOnScreen, !isMinimized, let frame else { return false }
+    func isVisible(on display: CGRect, includeMinimized: Bool = true) -> Bool {
+        guard isMinimized ? includeMinimized : isOnScreen, let frame else { return false }
         let overlap = frame.intersection(display)
         return !overlap.isNull && overlap.width > 0 && overlap.height > 0
     }
@@ -47,10 +47,13 @@ struct TaskbarTile: Identifiable {
     }
 
     static func make(apps: [ApplicationItem], windows: [TaskbarWindow], mode: TaskbarMode, separateMultipleWindows: Bool = false,
-                     display: CGRect? = nil, pinnedIDs: Set<String> = []) -> [Self] {
+                     display: CGRect? = nil, pinnedIDs: Set<String> = [], includeMinimized: Bool = true) -> [Self] {
         var seen = Set<String>()
         return apps.filter { seen.insert($0.id).inserted }.flatMap { app -> [Self] in
-            let appWindows = windows.filter { $0.bundleID == app.id && (display == nil || $0.isVisible(on: display!)) }
+            let appWindows = windows.filter {
+                $0.bundleID == app.id && (includeMinimized || !$0.isMinimized) &&
+                    (display == nil || $0.isVisible(on: display!, includeMinimized: includeMinimized))
+            }
             if display != nil && appWindows.isEmpty && !pinnedIDs.contains(app.id) && SpecialTile(rawValue: app.id) == nil {
                 return []
             }

@@ -6,7 +6,15 @@ struct StartFlyout: View {
     @ObservedObject var preferences: Preferences
     @ObservedObject var controller: TaskbarController
     @State private var noteCopied = false
+    @State private var query = ""
+    @State private var selection = ApplicationSearchSelection()
+    @FocusState private var searchFocused: Bool
     @StateObject private var downloads = RecentDownloadsStore()
+
+    private var searching: Bool { !query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+    private var results: [ApplicationItem] {
+        applications.installed.filter { ApplicationItem.matches($0.name, query: query) }
+    }
 
     private var returnApps: [ApplicationItem] {
         // Recent launches lead; running apps make this useful on a fresh session.
@@ -19,24 +27,45 @@ struct StartFlyout: View {
         FlyoutSurface {
             VStack(spacing: 0) {
                 header.background(heightReader)
-                ScrollView {
-                    VStack(alignment: .leading, spacing: 23) {
-                        favorites
-                        if !returnApps.isEmpty { jumpBackIn }
-                        places
-                        recentDownloads
-                        scratchpad
+                if searching {
+                    VStack(alignment: .leading, spacing: 10) {
+                        sectionHeading("Search results", detail: "\(results.count)")
+                        if results.isEmpty {
+                            ContentUnavailableView.search(text: query)
+                        } else {
+                            ApplicationSearchResults(results: results, selectedID: selection.selectedID,
+                                applications: applications, preferences: preferences, launch: controller.launch)
+                        }
                     }
-                    .padding(.horizontal, 26).padding(.top, 8).padding(.bottom, 24)
+                    .frame(height: 330).padding(.horizontal, 26).padding(.bottom, 24)
                     .background(heightReader)
+                } else {
+                    ScrollView {
+                        VStack(alignment: .leading, spacing: 23) {
+                            favorites
+                            if !returnApps.isEmpty { jumpBackIn }
+                            places
+                            recentDownloads
+                            scratchpad
+                        }
+                        .padding(.horizontal, 26).padding(.top, 8).padding(.bottom, 24)
+                        .background(heightReader)
+                    }
+                    .scrollIndicators(.hidden)
                 }
-                .scrollIndicators(.hidden)
                 footer.background(heightReader)
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
         .onPreferenceChange(StartHeightKey.self) { controller.fitStart(to: $0) }
+        .defaultFocus($searchFocused, true)
+        .onAppear { searchFocused = true }
+        .onChange(of: query) { _, _ in selection.reset(in: results) }
+        .onChange(of: results.map(\.id)) { _, _ in selection.reconcile(results) }
         .task { await downloads.refresh() }
+        .alert("Unable to complete action", isPresented: Binding(get: { applications.actionError != nil }, set: { if !$0 { applications.actionError = nil } })) {
+            Button("OK") { applications.actionError = nil }
+        } message: { Text(applications.actionError ?? "") }
     }
 
     private var heightReader: some View {
@@ -46,26 +75,31 @@ struct StartFlyout: View {
     }
 
     private var header: some View {
-        HStack(spacing: 13) {
-            StartGlyph(size: 29)
-                .frame(width: 49, height: 49)
-                .background(Color.accentColor.opacity(0.10), in: RoundedRectangle(cornerRadius: 14))
-            TimelineView(.periodic(from: .now, by: 60)) { context in
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(greeting(at: context.date)).font(.system(size: 21, weight: .semibold))
-                    Text(context.date, format: .dateTime.weekday(.wide).month(.wide).day())
-                        .font(.system(size: 11)).foregroundStyle(.secondary)
+        VStack(spacing: 18) {
+            HStack(spacing: 13) {
+                StartGlyph(size: 29)
+                    .frame(width: 49, height: 49)
+                    .background(Color.accentColor.opacity(0.10), in: RoundedRectangle(cornerRadius: 14))
+                TimelineView(.periodic(from: .now, by: 60)) { context in
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text(greeting(at: context.date)).font(.system(size: 21, weight: .semibold))
+                        Text(context.date, format: .dateTime.weekday(.wide).month(.wide).day())
+                            .font(.system(size: 11)).foregroundStyle(.secondary)
+                    }
                 }
+                Spacer(minLength: 8)
+                Button { controller.toggle(.launcher) } label: {
+                    Label("All apps", systemImage: "magnifyingglass")
+                        .font(.system(size: 11, weight: .medium))
+                        .padding(.horizontal, 12).frame(height: 31)
+                        .background(.primary.opacity(0.045), in: Capsule())
+                }
+                .buttonStyle(TileButtonStyle(cornerRadius: 16))
+                .accessibilityLabel("Browse and search all apps")
             }
-            Spacer(minLength: 8)
-            Button { controller.toggle(.launcher) } label: {
-                Label("All apps", systemImage: "magnifyingglass")
-                    .font(.system(size: 11, weight: .medium))
-                    .padding(.horizontal, 12).frame(height: 31)
-                    .background(.primary.opacity(0.045), in: Capsule())
-            }
-            .buttonStyle(TileButtonStyle(cornerRadius: 16))
-            .accessibilityLabel("Browse and search all apps")
+            ApplicationSearchField(query: $query, focused: $searchFocused,
+                move: { if searching { selection.move(by: $0, in: results) } },
+                submit: { if searching, let item = selection.selected(in: results) { controller.launch(item) } })
         }
         .padding(.horizontal, 26).padding(.top, 24).padding(.bottom, 22)
     }

@@ -2,6 +2,40 @@ import XCTest
 @testable import Macbar
 
 final class MacbarTests: XCTestCase {
+    func testSearchSelectionNavigatesAndKeepsTheSameAppAcrossCatalogUpdates() {
+        let results = ["Calculator", "Calendar", "Camera"].map {
+            ApplicationItem(id: $0, name: $0, url: URL(fileURLWithPath: "/\($0).app"), icon: NSImage())
+        }
+        var selection = ApplicationSearchSelection()
+        selection.reset(in: results)
+        selection.move(by: 1, in: results)
+        XCTAssertEqual(selection.selected(in: results)?.name, "Calendar")
+        selection.reconcile(Array(results.reversed()))
+        XCTAssertEqual(selection.selected(in: Array(results.reversed()))?.name, "Calendar")
+        selection.move(by: 1, in: results)
+        selection.move(by: 1, in: results)
+        XCTAssertEqual(selection.selected(in: results)?.name, "Camera")
+        selection.move(by: -1, in: results)
+        XCTAssertEqual(selection.selected(in: results)?.name, "Calendar")
+    }
+
+    func testSearchFilteringAndEmptyResultsCannotLaunchAnOldSelection() {
+        let calculator = ApplicationItem(id: "calculator", name: "Calculator", url: URL(fileURLWithPath: "/Calculator.app"), icon: NSImage())
+        let calendar = ApplicationItem(id: "calendar", name: "Calendar", url: URL(fileURLWithPath: "/Calendar.app"), icon: NSImage())
+        var selection = ApplicationSearchSelection()
+        selection.reset(in: [calculator, calendar])
+        selection.move(by: 1, in: [calculator, calendar])
+        selection.reset(in: [calculator])
+        XCTAssertEqual(selection.selected(in: [calculator])?.id, calculator.id)
+        selection.reconcile([])
+        selection.move(by: 1, in: [])
+        XCTAssertNil(selection.selectedID)
+        XCTAssertNil(selection.selected(in: []))
+        selection.reconcile([calendar])
+        selection.move(by: -1, in: [calendar])
+        XCTAssertEqual(selection.selected(in: [calendar])?.id, calendar.id)
+    }
+
     @MainActor
     func testStartVisibilityAndScratchpadSurviveRestartIndependentlyOfSearch() {
         let suite = "StartPreferencesTests.\(UUID().uuidString)"

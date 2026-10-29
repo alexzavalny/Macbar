@@ -345,6 +345,22 @@ final class TaskbarController: NSObject, ObservableObject {
         dismissPopup()
         if CGEventSource.keyState(.combinedSessionState, key: 55), let screen = screen(on: displayID) {
             windowGroups.click(tile, screen: screen, taskbar: visibleDisplayIDs.contains(displayID) ? bars[displayID]?.frame : nil, applications: applications)
+        } else if let window = tile.window {
+            Task {
+                switch await TaskbarWindowActivation.click(window) {
+                case .minimized:
+                    applications.refreshRunning()
+                case .restore:
+                    if let group = windowGroups.group(for: tile) {
+                        windowGroups.activate(group)
+                    } else {
+                        applications.activate(tile.app, window: window)
+                    }
+                case .failed(let message):
+                    applications.actionError = message
+                }
+                refreshWindowTiles()
+            }
         } else if let group = windowGroups.group(for: tile) {
             windowGroups.activate(group)
         } else {

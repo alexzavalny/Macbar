@@ -27,7 +27,7 @@ struct TaskbarView: View {
             let apps = preferences.orderedTaskbarApps(applications.pinnedApps + applications.unpinnedRunningApps)
             let baseTiles = TaskbarTile.make(apps: apps, windows: windowTiles.windows, mode: preferences.taskbarMode, separateMultipleWindows: preferences.separateMultipleWindows,
                 display: windowTiles.hasWindowAccess && preferences.usesWindowTiles ? controller.displays.first { $0.id == displayID }?.windowFrame : nil,
-                pinnedIDs: Set(preferences.pinnedIDs))
+                pinnedIDs: Set(preferences.pinnedIDs), includeMinimized: preferences.showMinimizedWindows)
             let arrangedTiles = preferences.usesWindowTiles ? windowTileOrder.ordered(baseTiles) : baseTiles
             let orderedTiles = dragOrder?.ordered(arrangedTiles) ?? arrangedTiles
             let tiles = groupedTogether(orderedTiles)
@@ -321,7 +321,7 @@ private struct TaskbarAppButton: View {
     private var showsTitle: Bool { tile.showsTitle(mode: preferences.taskbarMode, isRunning: applications.isRunning(item.id)) && width >= 64 }
     private var compressed: Bool { width < 88 }
     private var active: Bool {
-        applications.activeID == item.id && (tile.window?.isFocused ?? true)
+        applications.activeID == item.id && (tile.window?.isFocused ?? true) && tile.window?.isMinimized != true
     }
     private var heatLevel: Int { tile.special == nil ? cpu.appHeatLevels[item.id, default: 0] : 0 }
     private var accessibilityStatus: String {

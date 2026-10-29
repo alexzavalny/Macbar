@@ -15,3 +15,28 @@ struct ApplicationItem: Identifiable, Equatable {
         }
     }
 }
+
+struct ApplicationSearchSelection {
+    private(set) var selectedID: String?
+
+    mutating func reset(in results: [ApplicationItem]) {
+        selectedID = results.first?.id
+    }
+
+    mutating func reconcile(_ results: [ApplicationItem]) {
+        if !results.contains(where: { $0.id == selectedID }) { reset(in: results) }
+    }
+
+    mutating func move(by offset: Int, in results: [ApplicationItem]) {
+        guard !results.isEmpty else { selectedID = nil; return }
+        guard let index = results.firstIndex(where: { $0.id == selectedID }) else {
+            reset(in: results)
+            return
+        }
+        selectedID = results[min(max(index + offset, 0), results.count - 1)].id
+    }
+
+    func selected(in results: [ApplicationItem]) -> ApplicationItem? {
+        results.first(where: { $0.id == selectedID }) ?? results.first
+    }
+}
