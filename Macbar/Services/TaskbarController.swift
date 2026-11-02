@@ -49,6 +49,7 @@ final class TaskbarController: NSObject, ObservableObject {
     let keyboard = KeyboardInputStore()
     let aiLimits = AILimitsStore()
     let music = AppleMusicStore()
+    let zoom = ZoomStore()
     let previews = WindowPreviewStore()
     let windowTiles = TaskbarWindowStore()
     let windowGroups = WindowGroupStore()
@@ -167,7 +168,7 @@ final class TaskbarController: NSObject, ObservableObject {
             panel.appearance = preferences.appearance.nsAppearance
             panel.contentView = TaskbarHostingView(rootView: TaskbarView(controller: self, applications: applications,
                 preferences: preferences, audio: audio, battery: battery, cpu: cpu, wifi: wifi, keyboard: keyboard,
-                aiLimits: aiLimits, windowTiles: windowTiles, windowGroups: windowGroups, music: music, displayID: display.id))
+                aiLimits: aiLimits, windowTiles: windowTiles, windowGroups: windowGroups, music: music, zoom: zoom, displayID: display.id))
             bars[display.id] = panel
         }
         positionWindows()

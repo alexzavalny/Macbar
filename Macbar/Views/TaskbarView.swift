@@ -13,6 +13,7 @@ struct TaskbarView: View {
     @ObservedObject var windowTiles: TaskbarWindowStore
     @ObservedObject var windowGroups: WindowGroupStore
     @ObservedObject var music: AppleMusicStore
+    @ObservedObject var zoom: ZoomStore
     let displayID: CGDirectDisplayID
     @Environment(\.colorScheme) private var colorScheme
     @State private var windowTileOrder = TaskbarTileOrder()
@@ -145,6 +146,8 @@ struct TaskbarView: View {
                                                  action: { controller.activate(tile, on: displayID) })
                                 if tile.special == .appleMusic {
                                     MusicTileControls(music: music, running: applications.isRunning(tile.app.id))
+                                } else if tile.special == .zoom {
+                                    ZoomTileControls(zoom: zoom, running: applications.isRunning(tile.app.id))
                                 }
                             }
                         }
@@ -193,6 +196,9 @@ struct TaskbarView: View {
                                         Button("Previous track") { music.perform(.previous) }.disabled(!applications.isRunning(tile.app.id))
                                         Button(music.playbackTitle) { music.perform(.playPause) }.disabled(!applications.isRunning(tile.app.id))
                                         Button("Next track") { music.perform(.next) }.disabled(!applications.isRunning(tile.app.id))
+                                    } else if tile.special == .zoom {
+                                        Button(zoom.state.audioTitle) { zoom.toggle(.audio) }.disabled(zoom.state.muted == nil)
+                                        Button(zoom.state.videoTitle) { zoom.toggle(.video) }.disabled(zoom.state.videoOn == nil)
                                     }
                                 }
                             }
@@ -243,6 +249,9 @@ struct TaskbarView: View {
         .alert("Unable to control Music", isPresented: Binding(get: { music.error != nil }, set: { if !$0 { music.error = nil } })) {
             Button("OK") { music.error = nil }
         } message: { Text(music.error ?? "") }
+        .alert("Unable to control Zoom", isPresented: Binding(get: { zoom.error != nil }, set: { if !$0 { zoom.error = nil } })) {
+            Button("OK") { zoom.error = nil }
+        } message: { Text(zoom.error ?? "") }
         .alert("Unable to arrange windows", isPresented: Binding(get: { windowGroups.error != nil }, set: { if !$0 { windowGroups.error = nil } })) {
             Button("OK") { windowGroups.error = nil }
         } message: { Text(windowGroups.error ?? "") }
@@ -566,6 +575,36 @@ private struct MusicTileControls: View {
         }
         .buttonStyle(TileButtonStyle())
         .help(label)
+        .accessibilityLabel(label)
+    }
+}
+
+private struct ZoomTileControls: View {
+    @ObservedObject var zoom: ZoomStore
+    let running: Bool
+
+    var body: some View {
+        HStack(spacing: 0) {
+            control(zoom.state.audioSymbol, label: zoom.state.audioTitle, off: zoom.state.muted == true,
+                    available: zoom.state.muted != nil, toggle: .audio)
+            control(zoom.state.videoSymbol, label: zoom.state.videoTitle, off: zoom.state.videoOn == false,
+                    available: zoom.state.videoOn != nil, toggle: .video)
+        }
+        .frame(width: 56)
+        .disabled(!running)
+    }
+
+    /// Without Accessibility access the state is unknown, so a click asks for access instead.
+    private func control(_ symbol: String, label: String, off: Bool, available: Bool, toggle: ZoomStore.Toggle) -> some View {
+        Button { zoom.toggle(toggle) } label: {
+            Image(systemName: symbol).font(.system(size: 12, weight: .semibold))
+                .foregroundStyle(off ? AnyShapeStyle(Color.red) : AnyShapeStyle(.primary))
+                .frame(width: 28, height: 38)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(TileButtonStyle())
+        .disabled(!available && zoom.hasAccess)
+        .help(zoom.hasAccess ? (available ? label : "\(label) — available during a Zoom meeting") : "Allow Accessibility access to control Zoom")
         .accessibilityLabel(label)
     }
 }

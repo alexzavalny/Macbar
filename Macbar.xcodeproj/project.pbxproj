@@ -17,8 +17,10 @@
 		40682652CC08EBB22706B6E4 /* MacbarApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = BF4263B7004CF7E4F0E72A5F /* MacbarApp.swift */; };
 		4336F15311DE011BD8A2A2B4 /* WindowPreviewStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 62E692F99729BD44F3FBCAC1 /* WindowPreviewStore.swift */; };
 		468A4291E776DFDDE647DA34 /* AudioStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = A34E5C60322AAEAFC5F85AED /* AudioStore.swift */; };
+		4BCD027F146FDB5C32E78B1E /* ZoomTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = EC04D443F7CC8326271DD376 /* ZoomTests.swift */; };
 		5BC6E384675BAE00960A3104 /* TrayOrderTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0A6847AD79470623E3318725 /* TrayOrderTests.swift */; };
 		5D2E4CA1D9F7727EED1E5CC6 /* WindowGroupStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9E1877E122E45900263CC892 /* WindowGroupStore.swift */; };
+		5D9057004BAEBC48386162F4 /* ZoomStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1CBC0BA7E9F9C310C5D60B74 /* ZoomStore.swift */; };
 		6103B890F1C6BD354E708230 /* DockVisibilityTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 27E13BA463037E3A31BF19E5 /* DockVisibilityTests.swift */; };
 		62B9CD8F6DDFC6DEED070D7C /* AILimitsFlyout.swift in Sources */ = {isa = PBXBuildFile; fileRef = A46E366AC2F05811075AE89E /* AILimitsFlyout.swift */; };
 		6A8D172EE84F4114821D32C1 /* CPUStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 907469917AF98D6286164C79 /* CPUStore.swift */; };
@@ -81,6 +83,7 @@
 		0CE946900A7FAA33734D2468 /* WindowManagementStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WindowManagementStore.swift; sourceTree = "<group>"; };
 		14E1256A681E0A3F71944955 /* AILimitsTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AILimitsTests.swift; sourceTree = "<group>"; };
 		1756FFD79E7DAD55A53A3815 /* WindowPreviewFlyout.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WindowPreviewFlyout.swift; sourceTree = "<group>"; };
+		1CBC0BA7E9F9C310C5D60B74 /* ZoomStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ZoomStore.swift; sourceTree = "<group>"; };
 		1CD788426B8DB22A111B456E /* StartFlyout.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StartFlyout.swift; sourceTree = "<group>"; };
 		1F9C3DA9FD8929DC8AE6BA84 /* ApplicationItem.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ApplicationItem.swift; sourceTree = "<group>"; };
 		20A7D2AD7679BF463E5B12FD /* SettingsFlyout.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsFlyout.swift; sourceTree = "<group>"; };
@@ -126,6 +129,7 @@
 		D895A9D0A619B90A7A654564 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		E2B69293C483B1556993F6F0 /* CPUFlyout.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CPUFlyout.swift; sourceTree = "<group>"; };
 		E6C14A148AEEFDE466DB2659 /* TaskbarWindowStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TaskbarWindowStore.swift; sourceTree = "<group>"; };
+		EC04D443F7CC8326271DD376 /* ZoomTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ZoomTests.swift; sourceTree = "<group>"; };
 		F0EC7C7E5D5340B6ED0536B6 /* TaskbarTile.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TaskbarTile.swift; sourceTree = "<group>"; };
 		F27DACE55242926954B430A5 /* Preferences.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Preferences.swift; sourceTree = "<group>"; };
 		F47F8E639335858D50675AEF /* ApplicationStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ApplicationStore.swift; sourceTree = "<group>"; };
@@ -149,6 +153,7 @@
 				608F90E89C9770CCC8675F7F /* WindowFitTests.swift */,
 				0B9732942CE0441BF4C5F461 /* WindowGroupTests.swift */,
 				3CB2567478110105809E3167 /* WindowPreviewTests.swift */,
+				EC04D443F7CC8326271DD376 /* ZoomTests.swift */,
 			);
 			path = MacbarTests;
 			sourceTree = "<group>";
@@ -172,6 +177,7 @@
 				9E1877E122E45900263CC892 /* WindowGroupStore.swift */,
 				0CE946900A7FAA33734D2468 /* WindowManagementStore.swift */,
 				62E692F99729BD44F3FBCAC1 /* WindowPreviewStore.swift */,
+				1CBC0BA7E9F9C310C5D60B74 /* ZoomStore.swift */,
 			);
 			path = Services;
 			sourceTree = "<group>";
@@ -361,6 +367,7 @@
 				862670C319A1F4E937992048 /* WindowFitTests.swift in Sources */,
 				F4EE91E304F5B660C65E5936 /* WindowGroupTests.swift in Sources */,
 				ECFDCBDF3BF3A9F42126E94A /* WindowPreviewTests.swift in Sources */,
+				4BCD027F146FDB5C32E78B1E /* ZoomTests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -405,6 +412,7 @@
 				EE5D5F4D4D6D8E695132E2B2 /* WindowManagementStore.swift in Sources */,
 				F221472505F98BE8D733B42B /* WindowPreviewFlyout.swift in Sources */,
 				4336F15311DE011BD8A2A2B4 /* WindowPreviewStore.swift in Sources */,
+				5D9057004BAEBC48386162F4 /* ZoomStore.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

@@ -27,8 +27,15 @@ struct TaskbarWindow: Identifiable, Equatable {
 
 enum SpecialTile: String {
     case appleMusic = "com.apple.Music"
+    case zoom = "us.zoom.xos"
 
-    var width: CGFloat { 122 }
+    /// The app icon plus the tile's inline controls.
+    var width: CGFloat {
+        switch self {
+        case .appleMusic: 44 + 78
+        case .zoom: 44 + 56
+        }
+    }
 }
 
 struct TaskbarTile: Identifiable {
