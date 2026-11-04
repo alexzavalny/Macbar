@@ -1,6 +1,14 @@
 import AppKit
 import ApplicationServices
 
+private extension CGRect {
+    /// Displays and windows that only touch along an edge don't overlap.
+    func sharesArea(with other: CGRect) -> Bool {
+        let overlap = intersection(other)
+        return !overlap.isNull && overlap.width > 0 && overlap.height > 0
+    }
+}
+
 struct TaskbarWindow: Identifiable, Equatable {
     let id: UUID
     let bundleID: String
@@ -14,14 +22,47 @@ struct TaskbarWindow: Identifiable, Equatable {
 
     func isVisible(on display: CGRect, includeMinimized: Bool = true) -> Bool {
         guard isMinimized ? includeMinimized : isOnScreen, let frame else { return false }
-        let overlap = frame.intersection(display)
-        return !overlap.isNull && overlap.width > 0 && overlap.height > 0
+        return frame.sharesArea(with: display)
     }
 
     static func == (lhs: Self, rhs: Self) -> Bool {
         lhs.id == rhs.id && lhs.bundleID == rhs.bundleID && lhs.processID == rhs.processID &&
         lhs.title == rhs.title && lhs.isMinimized == rhs.isMinimized && lhs.isFocused == rhs.isFocused &&
         lhs.frame == rhs.frame && lhs.isOnScreen == rhs.isOnScreen
+    }
+}
+
+/// Where each app's visible windows are, according to the window server. Reading
+/// that needs no permission, so bars can split by display in every taskbar mode.
+struct AppDisplayPlacement: Equatable {
+    var framesByApp: [String: [CGRect]] = [:]
+
+    /// An app with no window on any display (windowless, hidden, or on another Space)
+    /// belongs on the main bar so it stays reachable.
+    func shows(_ appID: String, on display: CGRect, among displays: [CGRect]) -> Bool {
+        let frames = framesByApp[appID] ?? []
+        let holding = displays.filter { candidate in frames.contains { $0.sharesArea(with: candidate) } }
+        return holding.isEmpty ? display == displays.first : holding.contains(display)
+    }
+}
+
+/// What limits one bar's tiles. Accessibility windows decide when they're available;
+/// otherwise apps are placed by their windows. A single display needs no limit.
+struct TaskbarBarScope {
+    let display: CGRect?
+    let showsApp: ((String) -> Bool)?
+
+    init(display: CGRect?, allDisplays: [CGRect], readsWindows: Bool, placement: AppDisplayPlacement) {
+        if readsWindows {
+            self.display = display
+            showsApp = nil
+        } else if allDisplays.count > 1, let display {
+            self.display = display
+            showsApp = { placement.shows($0, on: display, among: allDisplays) }
+        } else {
+            self.display = nil
+            showsApp = nil
+        }
     }
 }
 
@@ -54,20 +95,22 @@ struct TaskbarTile: Identifiable {
     }
 
     static func make(apps: [ApplicationItem], windows: [TaskbarWindow], mode: TaskbarMode, separateMultipleWindows: Bool = false,
-                     display: CGRect? = nil, pinnedIDs: Set<String> = [], includeMinimized: Bool = true) -> [Self] {
+                     display: CGRect? = nil, pinnedIDs: Set<String> = [], includeMinimized: Bool = true,
+                     showsApp: ((String) -> Bool)? = nil) -> [Self] {
         var seen = Set<String>()
         return apps.filter { seen.insert($0.id).inserted }.flatMap { app -> [Self] in
             let appWindows = windows.filter {
                 $0.bundleID == app.id && (includeMinimized || !$0.isMinimized) &&
                     (display == nil || $0.isVisible(on: display!, includeMinimized: includeMinimized))
             }
-            if display != nil && appWindows.isEmpty && !pinnedIDs.contains(app.id) && SpecialTile(rawValue: app.id) == nil {
+            let placedHere = showsApp?(app.id) == true
+            if display != nil && appWindows.isEmpty && !placedHere && !pinnedIDs.contains(app.id) && SpecialTile(rawValue: app.id) == nil {
                 return []
             }
             if SpecialTile(rawValue: app.id) != nil { return [Self(app: app, window: nil)] }
             let matches = mode == .windows || (separateMultipleWindows && appWindows.count >= 2) ? appWindows : []
             // A pinned app is replaced by its windows, so it doesn't gain a duplicate launcher.
-            return matches.isEmpty ? [Self(app: app, window: nil, isLauncherOnly: display != nil)] : matches.map { Self(app: app, window: $0) }
+            return matches.isEmpty ? [Self(app: app, window: nil, isLauncherOnly: display != nil && !placedHere)] : matches.map { Self(app: app, window: $0) }
         }
     }
 }

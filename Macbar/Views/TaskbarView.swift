@@ -26,9 +26,10 @@ struct TaskbarView: View {
         GeometryReader { geometry in
             let sideWidth = preferences.trayWidth(hasBattery: battery.state != nil) + 15
             let apps = preferences.orderedTaskbarApps(applications.pinnedApps + applications.unpinnedRunningApps)
+            let scope = TaskbarBarScope(display: controller.displays.first { $0.id == displayID }?.windowFrame,
+                allDisplays: controller.displays.map(\.windowFrame), readsWindows: controller.readsWindows, placement: windowTiles.placement)
             let baseTiles = TaskbarTile.make(apps: apps, windows: windowTiles.windows, mode: preferences.taskbarMode, separateMultipleWindows: preferences.separateMultipleWindows,
-                display: windowTiles.hasWindowAccess && preferences.usesWindowTiles ? controller.displays.first { $0.id == displayID }?.windowFrame : nil,
-                pinnedIDs: Set(preferences.pinnedIDs), includeMinimized: preferences.showMinimizedWindows)
+                display: scope.display, pinnedIDs: Set(preferences.pinnedIDs), includeMinimized: preferences.showMinimizedWindows, showsApp: scope.showsApp)
             let arrangedTiles = preferences.usesWindowTiles ? windowTileOrder.ordered(baseTiles) : baseTiles
             let orderedTiles = dragOrder?.ordered(arrangedTiles) ?? arrangedTiles
             let tiles = groupedTogether(orderedTiles)

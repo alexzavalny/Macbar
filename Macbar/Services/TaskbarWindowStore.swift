@@ -15,15 +15,31 @@ protocol TaskbarWindowProviding {
 final class TaskbarWindowStore: ObservableObject {
     @Published private(set) var windows: [TaskbarWindow] = []
     @Published private(set) var hasWindowAccess = false
+    @Published private(set) var placement = AppDisplayPlacement()
     private let provider: TaskbarWindowProviding
     private let hasAccess: () -> Bool
+    private let visibility: @Sendable () -> WindowVisibilitySnapshot
     private var task: Task<Void, Never>?
+    private var placementTask: Task<Void, Never>?
     private var generation = UUID()
 
     init(provider: TaskbarWindowProviding = AccessibilityTaskbarWindowProvider(),
-         hasAccess: @escaping () -> Bool = { AXIsProcessTrusted() }) {
+         hasAccess: @escaping () -> Bool = { AXIsProcessTrusted() },
+         visibility: @escaping @Sendable () -> WindowVisibilitySnapshot = WindowVisibilitySnapshot.current) {
         self.provider = provider
         self.hasAccess = hasAccess
+        self.visibility = visibility
+    }
+
+    func refreshPlacement(processes: [TaskbarWindowProcess]) {
+        guard placementTask == nil else { return }
+        placementTask = Task { [weak self, visibility] in
+            let snapshot = await Task.detached(priority: .userInitiated) { visibility() }.value
+            guard let self else { return }
+            let next = snapshot.placement(for: processes)
+            if placement != next { placement = next }
+            placementTask = nil
+        }
     }
 
     func refresh(processes: [TaskbarWindowProcess], frontmostPID: pid_t?, enabled: Bool) {
@@ -203,8 +219,8 @@ enum TaskbarWindowActivation {
 /// AX supplies titles even when the window-server title is redacted. Match all
 /// windows before checking visibility so a window on another Space at the same
 /// bounds cannot be mistaken for a visible one.
-struct WindowVisibilitySnapshot {
-    struct Window {
+struct WindowVisibilitySnapshot: Sendable {
+    struct Window: Sendable {
         let processID: pid_t
         let title: String?
         let frame: CGRect
@@ -222,6 +238,16 @@ struct WindowVisibilitySnapshot {
         // With redacted titles and identical bounds across Spaces, prefer omitting
         // an ambiguous tile to showing a window from a different desktop.
         return !matches.isEmpty && matches.allSatisfy(\.isOnScreen)
+    }
+
+    func placement(for processes: [TaskbarWindowProcess]) -> AppDisplayPlacement {
+        let bundleIDs = Dictionary(processes.map { ($0.id, $0.bundleID) }, uniquingKeysWith: { first, _ in first })
+        var placement = AppDisplayPlacement()
+        for window in windows where window.isOnScreen {
+            guard let bundleID = bundleIDs[window.processID] else { continue }
+            placement.framesByApp[bundleID, default: []].append(window.frame)
+        }
+        return placement
     }
 
     static func current() -> Self {

@@ -412,6 +412,9 @@ final class TaskbarController: NSObject, ObservableObject {
         tileDragPanel = nil
     }
 
+    /// Accessibility window data is only read in window-tile modes, and only once granted.
+    var readsWindows: Bool { windowTiles.hasWindowAccess && preferences.usesWindowTiles }
+
     private func refreshWindowTiles() {
         let processes = applications.running.compactMap { app -> TaskbarWindowProcess? in
             guard let id = app.bundleIdentifier else { return nil }
@@ -419,6 +422,7 @@ final class TaskbarController: NSObject, ObservableObject {
         }
         windowTiles.refresh(processes: processes, frontmostPID: NSWorkspace.shared.frontmostApplication?.processIdentifier,
                             enabled: isVisible && preferences.usesWindowTiles)
+        if isVisible && displays.count > 1 && !readsWindows { windowTiles.refreshPlacement(processes: processes) }
     }
 
     func openMissionControl() {

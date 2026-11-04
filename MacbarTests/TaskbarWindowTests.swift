@@ -170,6 +170,86 @@ final class TaskbarWindowTests: XCTestCase {
         XCTAssertFalse(empty[0].showsTitle(mode: .windows, isRunning: true))
     }
 
+    private let mainDisplay = CGRect(x: 0, y: 0, width: 1440, height: 900)
+    private let sideDisplay = CGRect(x: 1440, y: 0, width: 2560, height: 1440)
+
+    private func barTiles(on display: CGRect, displays: [CGRect]? = nil, mode: TaskbarMode = .icons,
+                          apps: [String], pinned: Set<String> = [], framesByApp: [String: [CGRect]]) -> [TaskbarTile] {
+        let scope = TaskbarBarScope(display: display, allDisplays: displays ?? [mainDisplay, sideDisplay], readsWindows: false,
+                                    placement: AppDisplayPlacement(framesByApp: framesByApp))
+        return TaskbarTile.make(apps: apps.map(app), windows: [], mode: mode, display: scope.display,
+                                pinnedIDs: pinned, showsApp: scope.showsApp)
+    }
+
+    func testFreshInstallSplitsAppsByDisplayWithoutWindowAccess() {
+        let frames = ["editor": [CGRect(x: 100, y: 100, width: 800, height: 600)],
+                      "browser": [CGRect(x: 1600, y: 100, width: 800, height: 600)]]
+        let apps = ["editor", "browser", "windowless"]
+        XCTAssertEqual(barTiles(on: mainDisplay, apps: apps, framesByApp: frames).map(\.app.id), ["editor", "windowless"])
+        XCTAssertEqual(barTiles(on: sideDisplay, apps: apps, framesByApp: frames).map(\.app.id), ["browser"])
+    }
+
+    func testPlacementShowsSpanningWindowsOnBothBarsAndOffscreenWindowsOnTheMainBar() {
+        let frames = ["spanning": [CGRect(x: 1000, y: 100, width: 900, height: 600)],
+                      "offscreen": [CGRect(x: -9000, y: -9000, width: 500, height: 500)],
+                      "adjacent": [CGRect(x: 1440, y: 0, width: 500, height: 500)]]
+        let apps = ["spanning", "offscreen", "adjacent"]
+        XCTAssertEqual(barTiles(on: mainDisplay, apps: apps, framesByApp: frames).map(\.app.id), ["spanning", "offscreen"])
+        XCTAssertEqual(barTiles(on: sideDisplay, apps: apps, framesByApp: frames).map(\.app.id), ["spanning", "adjacent"])
+    }
+
+    func testWindowModeWithoutAccessKeepsAppNameTitlesAndPinnedLaunchersPerDisplay() {
+        let frames = ["editor": [CGRect(x: 100, y: 100, width: 800, height: 600)]]
+        let here = barTiles(on: mainDisplay, mode: .windows, apps: ["editor"], pinned: ["editor"], framesByApp: frames)
+        XCTAssertEqual(here.map(\.title), ["editor"])
+        XCTAssertTrue(here[0].showsTitle(mode: .windows, isRunning: true))
+        let elsewhere = barTiles(on: sideDisplay, mode: .windows, apps: ["editor"], pinned: ["editor"], framesByApp: frames)
+        XCTAssertEqual(elsewhere.map(\.app.id), ["editor"])
+        XCTAssertFalse(elsewhere[0].showsTitle(mode: .windows, isRunning: true))
+    }
+
+    func testSingleDisplayKeepsEveryRunningApp() {
+        let frames = ["editor": [CGRect(x: 100, y: 100, width: 800, height: 600)]]
+        let tiles = barTiles(on: mainDisplay, displays: [mainDisplay], apps: ["editor", "windowless"], framesByApp: frames)
+        XCTAssertEqual(tiles.map(\.app.id), ["editor", "windowless"])
+        XCTAssertFalse(tiles[1].isLauncherOnly)
+    }
+
+    func testAccessibilityWindowsDecideTheBarWhenAvailable() {
+        let scope = TaskbarBarScope(display: sideDisplay, allDisplays: [mainDisplay, sideDisplay], readsWindows: true,
+                                    placement: AppDisplayPlacement())
+        XCTAssertEqual(scope.display, sideDisplay)
+        XCTAssertNil(scope.showsApp)
+    }
+
+    func testSnapshotPlacementUsesVisibleWindowsOfKnownProcesses() {
+        let frame = CGRect(x: 100, y: 100, width: 800, height: 600)
+        let other = CGRect(x: 1600, y: 100, width: 800, height: 600)
+        let snapshot = WindowVisibilitySnapshot(windows: [
+            .init(processID: 1, title: nil, frame: frame, isOnScreen: true),
+            .init(processID: 2, title: nil, frame: other, isOnScreen: true),
+            .init(processID: 1, title: nil, frame: other, isOnScreen: false),
+            .init(processID: 99, title: nil, frame: other, isOnScreen: true)
+        ])
+        let placement = snapshot.placement(for: [TaskbarWindowProcess(id: 1, bundleID: "editor"),
+                                                 TaskbarWindowProcess(id: 2, bundleID: "editor"),
+                                                 TaskbarWindowProcess(id: 3, bundleID: "idle")])
+        XCTAssertEqual(placement.framesByApp, ["editor": [frame, other]])
+    }
+
+    @MainActor
+    func testStorePublishesPlacementWithoutWindowAccess() async {
+        let frame = CGRect(x: 100, y: 100, width: 800, height: 600)
+        let store = TaskbarWindowStore(provider: TaskbarWindowProviderStub(), hasAccess: { false }, visibility: {
+            WindowVisibilitySnapshot(windows: [.init(processID: 1, title: nil, frame: frame, isOnScreen: true)])
+        })
+        store.refresh(processes: [], frontmostPID: nil, enabled: false)
+        store.refreshPlacement(processes: [TaskbarWindowProcess(id: 1, bundleID: "editor")])
+        let deadline = Date().addingTimeInterval(5)
+        while store.placement.framesByApp.isEmpty && Date() < deadline { await Task.yield() }
+        XCTAssertEqual(store.placement.framesByApp, ["editor": [frame]])
+    }
+
     func testMinimizingKeepsTileIdentityPositionAndTheLastNormalDisplayFrame() async {
         let element = AXUIElementCreateApplication(100001)
         let normalFrame = CGRect(x: -600, y: -1300, width: 900, height: 700)
