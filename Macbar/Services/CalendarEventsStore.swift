@@ -47,11 +47,11 @@ final class CalendarEventsStore: ObservableObject {
     /// The tray widget's meeting: running now or starting within an hour.
     @Published private(set) var next: MeetingEvent?
     private var timer: Timer?
-    private let store = EKEventStore()
+    private var store = EKEventStore()
     private var observer: NSObjectProtocol?
 
     init() {
-        observer = NotificationCenter.default.addObserver(forName: .EKEventStoreChanged, object: store, queue: .main) { [weak self] _ in
+        observer = NotificationCenter.default.addObserver(forName: .EKEventStoreChanged, object: nil, queue: .main) { [weak self] _ in
             MainActor.assumeIsolated { self?.load() }
         }
         refreshAccess()
@@ -81,7 +81,11 @@ final class CalendarEventsStore: ObservableObject {
 
     /// Meetings that haven't ended, through the end of tomorrow.
     func load() {
+        let before = access
         refreshAccess()
+        // A store opened before access was granted (here or in the Permissions window) never
+        // sees any events, so start a fresh one.
+        if access == .granted, before != .granted { store = EKEventStore() }
         guard access == .granted else { events = []; next = nil; return }
         let calendar = Calendar.current
         let now = Date()
