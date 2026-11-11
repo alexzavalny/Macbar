@@ -81,6 +81,9 @@ struct SettingsFlyout: View {
                     }
                 }
                 Divider().opacity(0.5)
+                Button { PermissionsWindow.shared.show() } label: {
+                    Label("Permissions…", systemImage: "checkmark.shield").font(.system(size: 12, weight: .medium))
+                }.buttonStyle(.bordered)
                 VStack(alignment: .leading, spacing: 9) {
                     Label("Settle in", systemImage: "dock.rectangle").font(.system(size: 12, weight: .semibold))
                     Toggle("Hide Dock while Macbar is running", isOn: $preferences.hideDockWhileRunning)

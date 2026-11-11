@@ -39,6 +39,11 @@ final class WindowManagementStore: ObservableObject {
         guard self.contexts != contexts else { return }
         self.contexts = contexts
         refresh()
+        guard preferences.keepWindowsAboveTaskbar, AXIsProcessTrusted() else { return }
+        let own = ProcessInfo.processInfo.processIdentifier
+        worker.refit(processIDs: NSWorkspace.shared.runningApplications
+            .filter { $0.activationPolicy == .regular && $0.processIdentifier != own }
+            .map(\.processIdentifier), contexts: contexts)
     }
 
     func requestAccessibilityAccess() {
@@ -158,7 +163,28 @@ private final class WindowFitWorker {
               let frame = readFrame(window),
               let context = WindowFitGeometry.context(for: frame, in: contexts) else { return }
         observe(window)
+        fit(window, frame: frame, context: context, processID: processID)
+    }
 
+    /// Re-fits every window of the given applications, not just the focused one. Used when the
+    /// taskbar geometry changes (compact toggle, display change) so background windows follow too.
+    func refit(processIDs: [pid_t], contexts: [WindowFitContext]) {
+        queue.async { [weak self] in
+            guard let self, !contexts.isEmpty else { return }
+            for processID in processIDs {
+                let app = AXUIElementCreateApplication(processID)
+                AXUIElementSetMessagingTimeout(app, 0.2)
+                guard let windows = self.attribute(app, kAXWindowsAttribute) as? [AXUIElement] else { continue }
+                for window in windows {
+                    guard let frame = self.readFrame(window),
+                          let context = WindowFitGeometry.context(for: frame, in: contexts) else { continue }
+                    self.fit(window, frame: frame, context: context, processID: processID)
+                }
+            }
+        }
+    }
+
+    private func fit(_ window: AXUIElement, frame: CGRect, context: WindowFitContext, processID: pid_t) {
         guard let fullScreen = boolAttribute(window, "AXFullScreen"),
               let minimized = boolAttribute(window, kAXMinimizedAttribute),
               let subrole = attribute(window, kAXSubroleAttribute) as? String,
