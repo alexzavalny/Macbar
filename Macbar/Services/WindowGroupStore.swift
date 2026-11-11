@@ -9,12 +9,25 @@ struct WindowGroupMember {
 }
 
 struct WindowGroup: Identifiable {
-    let id = UUID()
-    let first: WindowGroupMember
-    let second: WindowGroupMember
+    let id: UUID
+    let members: [WindowGroupMember]
+    /// A tile Chord placed: Chord keeps its windows in place, so Macbar doesn't follow resizes.
+    let isExternal: Bool
+    var first: WindowGroupMember { members[0] }
+    var second: WindowGroupMember { members[1] }
+
+    init(first: WindowGroupMember, second: WindowGroupMember) {
+        self.init(members: [first, second])
+    }
+
+    init(members: [WindowGroupMember], id: UUID = UUID(), isExternal: Bool = false) {
+        self.id = id
+        self.members = members
+        self.isExternal = isExternal
+    }
 
     func contains(_ tile: TaskbarTile) -> Bool {
-        [first, second].contains { member in
+        members.contains { member in
             if let element = tile.window?.element { return CFEqual(element, member.element) }
             return tile.app.id == member.tile.app.id
         }
@@ -56,6 +69,8 @@ final class WindowGroupStore: ObservableObject {
         didSet { updateResizeTracking() }
     }
     @Published var error: String?
+    /// Called when the user ungroups a Chord tile, so Chord lets it go too.
+    var onReleaseExternal: () -> Void = {}
     private var first: (tile: TaskbarTile, task: Task<WindowGroupMember?, Never>)?
     private var checkingWindows = false
     private let queue = DispatchQueue(label: "studio.macbar.window-group", qos: .userInitiated)
@@ -67,7 +82,7 @@ final class WindowGroupStore: ObservableObject {
     deinit { resizeTimer?.invalidate() }
 
     private func updateResizeTracking() {
-        let current = groups
+        let current = groups.filter { !$0.isExternal }
         queue.async { [weak self] in
             let ids = Set(current.map(\.id))
             self?.trackedFrames = self?.trackedFrames.filter { ids.contains($0.key) } ?? [:]
@@ -86,9 +101,9 @@ final class WindowGroupStore: ObservableObject {
     }
 
     private func checkGroupResizes() {
-        guard !resizeCheckPending, !groups.isEmpty, AXIsProcessTrusted() else { return }
+        let current = groups.filter { !$0.isExternal }
+        guard !resizeCheckPending, !current.isEmpty, AXIsProcessTrusted() else { return }
         resizeCheckPending = true
-        let current = groups
         queue.async { [weak self] in
             guard let self else { return }
             for group in current { self.checkResize(group) }
@@ -143,10 +158,23 @@ final class WindowGroupStore: ObservableObject {
     func endGesture() { first = nil }
 
     func group(for tile: TaskbarTile) -> WindowGroup? { groups.first { $0.contains(tile) } }
-    func ungroup(_ group: WindowGroup) { groups.removeAll { $0.id == group.id } }
+    func ungroup(_ group: WindowGroup) {
+        groups.removeAll { $0.id == group.id }
+        if group.isExternal { onReleaseExternal() }
+    }
+
+    /// Shows Chord's tile as one group; fewer than two windows is no group.
+    func setExternal(_ members: [WindowGroupMember]) {
+        let previous = groups.first { $0.isExternal }
+        groups.removeAll { $0.isExternal }
+        guard members.count >= 2 else { return }
+        let tiles = members.map(\.tile)
+        groups.removeAll { group in tiles.contains { group.contains($0) } }
+        groups.append(WindowGroup(members: members, id: previous?.id ?? UUID(), isExternal: true))
+    }
     func prune(running: [NSRunningApplication]) {
         let pids = Set(running.map(\.processIdentifier))
-        groups.removeAll { !pids.contains($0.first.processID) || !pids.contains($0.second.processID) }
+        groups.removeAll { group in group.members.contains { !pids.contains($0.processID) } }
     }
 
     func validateWindows() {
@@ -157,7 +185,7 @@ final class WindowGroupStore: ObservableObject {
             let closed: [UUID] = await withCheckedContinuation { continuation in
                 queue.async {
                     let ids = current.filter { group in
-                        [group.first, group.second].contains { member in
+                        group.members.contains { member in
                             var value: CFTypeRef?
                             AXUIElementSetMessagingTimeout(member.element, 0.2)
                             return AXUIElementCopyAttributeValue(member.element, kAXRoleAttribute as CFString, &value) == .invalidUIElement
@@ -285,7 +313,7 @@ final class WindowGroupStore: ObservableObject {
         }
     }
 
-    func activate(_ group: WindowGroup) { raise([group.first, group.second]) }
+    func activate(_ group: WindowGroup) { raise(group.members) }
     private func raise(_ members: [WindowGroupMember]) {
         Task {
             for member in members {

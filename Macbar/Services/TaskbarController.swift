@@ -45,6 +45,7 @@ final class TaskbarController: NSObject, ObservableObject {
     let windowManagement: WindowManagementStore
     let audio = AudioStore()
     let battery = BatteryStore()
+    let calendarEvents = CalendarEventsStore()
     let cpu = CPUStore()
     let wifi = WiFiStore()
     let keyboard = KeyboardInputStore()
@@ -90,6 +91,16 @@ final class TaskbarController: NSObject, ObservableObject {
 
     func start() {
         Screens.bottomInset = { [weak self] in self.map { $0.isVisible ? $0.preferences.barHeight : 0 } ?? 0 }
+        windowGroups.onReleaseExternal = { [weak chord] in chord?.dropTile() }
+        chord.onTileWindows = { [weak self] windows in
+            guard let self else { return }
+            self.windowGroups.setExternal(windows.compactMap { w in
+                self.applications.application(for: w.bundleID).map {
+                    WindowGroupMember(tile: TaskbarTile(app: $0, window: nil), processID: w.pid, element: w.window)
+                }
+            })
+        }
+        calendarEvents.start()
         chord.start()
         dockVisibility.recover()
         dockVisibility.setHidden(preferences.hideDockWhileRunning)
@@ -174,7 +185,7 @@ final class TaskbarController: NSObject, ObservableObject {
             panel.appearance = preferences.appearance.nsAppearance
             panel.contentView = TaskbarHostingView(rootView: TaskbarView(controller: self, applications: applications,
                 preferences: preferences, audio: audio, battery: battery, cpu: cpu, wifi: wifi, keyboard: keyboard,
-                aiLimits: aiLimits, windowTiles: windowTiles, windowGroups: windowGroups, music: music, zoom: zoom, displayID: display.id))
+                aiLimits: aiLimits, calendarEvents: calendarEvents, windowTiles: windowTiles, windowGroups: windowGroups, music: music, zoom: zoom, displayID: display.id))
             bars[display.id] = panel
         }
         positionWindows()
@@ -220,7 +231,9 @@ final class TaskbarController: NSObject, ObservableObject {
             applications.reloadCatalog()
             panel.contentView = NSHostingView(rootView: LauncherView(applications: applications, preferences: preferences, controller: self))
         case .calendar:
-            panel.contentView = NSHostingView(rootView: CalendarFlyout())
+            panel.contentView = NSHostingView(rootView: CalendarFlyout(events: calendarEvents) { [weak self] url in
+                self?.join(url)
+            })
         case .settings:
             panel.contentView = NSHostingView(rootView: SettingsFlyout(preferences: preferences, windowManagement: windowManagement))
         case .wifi:
@@ -555,7 +568,7 @@ final class TaskbarController: NSObject, ObservableObject {
             switch popup {
             case .start: size = CGSize(width: 600, height: startHeight)
             case .launcher: size = CGSize(width: 640, height: 600)
-            case .calendar: size = CGSize(width: 360, height: 442)
+            case .calendar: size = CGSize(width: 360, height: 660)
             case .settings: size = CGSize(width: 370, height: 640)
             case .wifi: size = CGSize(width: 370, height: 460)
             case .volume: size = CGSize(width: 360, height: 250)
@@ -610,6 +623,11 @@ final class TaskbarController: NSObject, ObservableObject {
         if isVisible { toggle(.settings) }
     }
     @objc private func toggleChord() { chord.settings.setEnabled(!chord.settings.enabled) }
+    func join(_ url: URL) {
+        dismissPopup()
+        NSWorkspace.shared.open(url)
+    }
+
     @objc private func showPermissions() { PermissionsWindow.shared.show() }
     @objc private func showChordSettings() { chord.showSettings() }
     @objc private func showAllWindows() { chord.showAllWindows() }

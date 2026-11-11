@@ -131,4 +131,66 @@ final class WindowGroupTests: XCTestCase {
         XCTAssertFalse(group.contains(tile(other)))
         XCTAssertTrue(group.contains(TaskbarTile(app: app, window: nil)))
     }
+
+    @MainActor func testChordTileOfThreeShowsAsOneExternalGroup() {
+        func tile(_ id: String) -> TaskbarTile {
+            TaskbarTile(app: ApplicationItem(id: id, name: id, url: URL(fileURLWithPath: "/tmp/\(id).app"), icon: NSImage()), window: nil)
+        }
+        let a = tile("a"), b = tile("b"), c = tile("c"), other = tile("other")
+        let members = [a, b, c].enumerated().map {
+            WindowGroupMember(tile: $1, processID: pid_t($0 + 1), element: AXUIElementCreateApplication(pid_t(100010 + $0)))
+        }
+        let group = WindowGroup(members: members, isExternal: true)
+        let items = TaskbarStripItem.make(tiles: [a, other, b, c], groups: [group])
+        XCTAssertEqual(items.map(\.tiles.count), [3, 1])
+        XCTAssertEqual(items[0].groupID, group.id)
+
+        let store = WindowGroupStore()
+        store.setExternal(members)
+        XCTAssertEqual(store.groups.count, 1)
+        let id = store.groups[0].id
+        store.setExternal(members)
+        XCTAssertEqual(store.groups[0].id, id, "an updated tile keeps its group, so the strip doesn't flicker")
+        store.setExternal([members[0]])
+        XCTAssertTrue(store.groups.isEmpty, "one window is no group")
+    }
+}
+
+final class MeetingLinkTests: XCTestCase {
+    func testFindsKnownCallLinkAndIgnoresOthers() {
+        XCTAssertEqual(MeetingLink.find(in: [nil, "Room 4", "Agenda https://example.com/doc\nJoin: https://acme.zoom.us/j/123?pwd=x"])?.host, "acme.zoom.us")
+        XCTAssertEqual(MeetingLink.find(in: ["https://meet.google.com/abc-defg-hij"])?.host, "meet.google.com")
+        XCTAssertNil(MeetingLink.find(in: ["https://notzoom.us.evil.com/j/1", "https://example.com"]))
+        XCTAssertNil(MeetingLink.find(in: [nil, nil]))
+    }
+
+    func testSoonMeansRunningOrWithinTenMinutes() {
+        let now = Date()
+        func event(_ start: TimeInterval, _ end: TimeInterval) -> MeetingEvent {
+            MeetingEvent(id: "e", title: "t", start: now.addingTimeInterval(start), end: now.addingTimeInterval(end), joinURL: nil)
+        }
+        XCTAssertTrue(event(-300, 900).isSoon(at: now))
+        XCTAssertTrue(event(540, 2000).isSoon(at: now))
+        XCTAssertFalse(event(900, 2000).isSoon(at: now))
+        XCTAssertFalse(event(-900, -10).isSoon(at: now))
+    }
+
+    func testCountdownReadsNowMinutesOrClockTime() {
+        let now = Date()
+        func event(_ start: TimeInterval, _ end: TimeInterval = 3600) -> MeetingEvent {
+            MeetingEvent(id: "e", title: "t", start: now.addingTimeInterval(start), end: now.addingTimeInterval(end), joinURL: nil)
+        }
+        XCTAssertEqual(event(-60).countdown(at: now), "Now")
+        XCTAssertEqual(event(12 * 60 - 20).countdown(at: now), "in 12 min")
+        XCTAssertEqual(event(5).countdown(at: now), "in 1 min")
+        XCTAssertTrue(event(2 * 3600, 3 * 3600).countdown(at: now).hasPrefix("at "))
+    }
+
+    func testStoreIsRenewedWhenAccessIsGrantedLater() {
+        XCTAssertTrue(CalendarEventsStore.needsFreshStore(from: .notDetermined, to: .granted))
+        XCTAssertTrue(CalendarEventsStore.needsFreshStore(from: .denied, to: .granted))
+        XCTAssertFalse(CalendarEventsStore.needsFreshStore(from: .granted, to: .granted))
+        XCTAssertFalse(CalendarEventsStore.needsFreshStore(from: .granted, to: .denied))
+        XCTAssertFalse(CalendarEventsStore.needsFreshStore(from: .notDetermined, to: .denied))
+    }
 }

@@ -115,7 +115,7 @@ struct TaskbarTile: Identifiable {
     }
 }
 
-/// A pair occupies one slot in the strip so overflow cannot split its two halves.
+/// A group occupies one slot in the strip so overflow cannot split its two halves.
 struct TaskbarStripItem: Identifiable {
     let tiles: [TaskbarTile]
     let groupID: UUID?
@@ -133,7 +133,7 @@ struct TaskbarStripItem: Identifiable {
         for tile in tiles where !consumed.contains(tile.id) {
             if let group = groups.first(where: { $0.contains(tile) }) {
                 let matches = tiles.filter { group.contains($0) && !consumed.contains($0.id) }
-                if matches.count == 2 {
+                if matches.count >= 2 {
                     consumed.formUnion(matches.map(\.id))
                     result.append(TaskbarStripItem(tiles: matches, groupID: group.id))
                     continue

@@ -68,6 +68,8 @@ final class ChordCoordinator {
 
     /// Called when the number of windows in the current tile changes.
     var onTileCount: @MainActor (Int) -> Void = { _ in }
+    /// The tile's placed windows (bundle ID, pid, window), whenever they change.
+    var onTileWindows: @MainActor ([(bundleID: String, pid: pid_t, window: AXUIElement)]) -> Void = { _ in }
 
     var tileCount: Int { slots.count }
 
@@ -271,6 +273,14 @@ final class ChordCoordinator {
         tileWatcher.stop()
         drag = nil
         onTileCount(0)
+        publishTile()
+    }
+
+    private func publishTile() {
+        onTileWindows(slots.compactMap { slot in
+            guard let window = slot.window, let pid = slot.pid else { return nil }
+            return (slot.binding.bundleID, pid, window)
+        })
     }
 
     /// Disable, hide toggle off, quit.
@@ -434,6 +444,7 @@ final class ChordCoordinator {
         guard let screen = display?.visible else { return }
         place(on: screen, focus: focus, skip: skip)
         if skip == nil { adoptSizes(on: screen) }
+        publishTile()
     }
 
     private func place(on screen: CGRect, focus: Bool, skip: Int?) {

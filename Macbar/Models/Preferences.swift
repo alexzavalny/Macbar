@@ -27,7 +27,7 @@ enum TaskbarMode: String, CaseIterable, Identifiable {
 }
 
 enum TaskbarControl: String, CaseIterable, Identifiable {
-    case start, inputLanguage, wifi, sound, battery, cpu, clock, search, missionControl, aiLimits, trash
+    case start, inputLanguage, wifi, sound, battery, cpu, clock, search, missionControl, aiLimits, trash, meetings
     var id: String { rawValue }
     var title: String {
         switch self {
@@ -42,6 +42,7 @@ enum TaskbarControl: String, CaseIterable, Identifiable {
         case .missionControl: return "Mission Control"
         case .aiLimits: return "AI Limits"
         case .trash: return "Trash"
+        case .meetings: return "Next Meeting"
         }
     }
 }
@@ -116,11 +117,12 @@ final class Preferences: ObservableObject {
         trayWidth(hasBattery: true)
     }
 
-    func trayWidth(hasBattery: Bool) -> CGFloat {
+    func trayWidth(hasBattery: Bool, meetingWidth: CGFloat = 0) -> CGFloat {
         let widths: [(TaskbarControl, CGFloat)] = [(.inputLanguage, 38), (.wifi, 28), (.sound, 28), (.clock, 88), (.aiLimits, 56), (.cpu, 58), (.trash, 28)]
         let visible = widths.filter { shows($0.0) && !drawerItems.contains($0.0.rawValue) }
         let settingsWidth: CGFloat = isInDrawer(.settings) ? 0 : 30
         return 28 + settingsWidth + visible.reduce(0) { $0 + $1.1 + 2 } + (hasBattery && shows(.battery) && !isInDrawer(.battery) ? 34 : 0)
+            + (meetingWidth > 0 && shows(.meetings) && !isInDrawer(.meetings) ? meetingWidth + 2 : 0)
     }
 
     func togglePin(_ id: String) {

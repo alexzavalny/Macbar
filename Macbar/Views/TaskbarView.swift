@@ -10,6 +10,7 @@ struct TaskbarView: View {
     @ObservedObject var wifi: WiFiStore
     @ObservedObject var keyboard: KeyboardInputStore
     @ObservedObject var aiLimits: AILimitsStore
+    @ObservedObject var calendarEvents: CalendarEventsStore
     @ObservedObject var windowTiles: TaskbarWindowStore
     @ObservedObject var windowGroups: WindowGroupStore
     @ObservedObject var music: AppleMusicStore
@@ -24,7 +25,7 @@ struct TaskbarView: View {
 
     var body: some View {
         GeometryReader { geometry in
-            let sideWidth = preferences.trayWidth(hasBattery: battery.state != nil) + 15
+            let sideWidth = preferences.trayWidth(hasBattery: battery.state != nil, meetingWidth: calendarEvents.trayWidth) + 15
             let apps = preferences.orderedTaskbarApps(applications.pinnedApps + applications.unpinnedRunningApps)
             let scope = TaskbarBarScope(display: controller.displays.first { $0.id == displayID }?.windowFrame,
                 allDisplays: controller.displays.map(\.windowFrame), readsWindows: controller.readsWindows, placement: windowTiles.placement)
@@ -165,9 +166,11 @@ struct TaskbarView: View {
                         }
                         .overlay(alignment: .leading) {
                             if item.isGroup {
-                                Rectangle().fill(.primary.opacity(0.15)).frame(width: 1, height: 22)
-                                    .offset(x: layout.memberWidths[index][0] - 0.5)
-                                    .allowsHitTesting(false)
+                                ForEach(0..<(item.tiles.count - 1), id: \.self) { divider in
+                                    Rectangle().fill(.primary.opacity(0.15)).frame(width: 1, height: 22)
+                                        .offset(x: layout.memberWidths[index].prefix(divider + 1).reduce(0, +) - 0.5)
+                                        .allowsHitTesting(false)
+                                }
                             }
                         }
                         .overlay(alignment: .bottom) {
@@ -268,9 +271,10 @@ struct TaskbarView: View {
         var result = tiles
         for group in windowGroups.groups {
             let indices = result.indices.filter { group.contains(result[$0]) }
-            guard indices.count == 2, indices[1] != indices[0] + 1 else { continue }
-            let second = result.remove(at: indices[1])
-            result.insert(second, at: indices[0] + 1)
+            guard indices.count >= 2, let start = indices.first else { continue }
+            let members = indices.map { result[$0] }
+            for index in indices.reversed() { result.remove(at: index) }
+            result.insert(contentsOf: members, at: start)
         }
         return result
     }
@@ -300,7 +304,7 @@ struct TaskbarView: View {
 
     private var tray: some View {
         TaskbarTrayView(controller: controller, preferences: preferences, audio: audio, battery: battery, cpu: cpu,
-                        wifi: wifi, keyboard: keyboard, aiLimits: aiLimits, displayID: displayID)
+                        wifi: wifi, keyboard: keyboard, aiLimits: aiLimits, calendarEvents: calendarEvents, displayID: displayID)
     }
 }
 

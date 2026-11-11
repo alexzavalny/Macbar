@@ -9,6 +9,7 @@ struct TaskbarTrayView: View {
     @ObservedObject var wifi: WiFiStore
     @ObservedObject var keyboard: KeyboardInputStore
     @ObservedObject var aiLimits: AILimitsStore
+    @ObservedObject var calendarEvents: CalendarEventsStore
     let displayID: CGDirectDisplayID
     @State private var draggedItem: TrayItem?
     @State private var pendingOrder: [TrayItem]?
@@ -19,7 +20,7 @@ struct TaskbarTrayView: View {
 
     private var availableItems: [TrayItem] {
         (pendingOrder ?? preferences.trayOrder).filter {
-            ($0.control.map(preferences.shows) ?? true) && ($0 != .battery || battery.state != nil)
+            ($0.control.map(preferences.shows) ?? true) && ($0 != .battery || battery.state != nil) && ($0 != .meetings || calendarEvents.next != nil)
         }
     }
     private var visibleItems: [TrayItem] { availableItems.filter { !preferences.isInDrawer($0) } }
@@ -62,7 +63,25 @@ struct TaskbarTrayView: View {
 
     private func trayItem(_ item: TrayItem, inDrawer: Bool) -> some View {
         Group {
-            if item == .inputLanguage {
+            if item == .meetings, let event = calendarEvents.next {
+                HStack(spacing: 4) {
+                    TrayButton(selected: false, accessibilityLabel: "Next meeting: \(event.title)",
+                               help: event.title, dragActions: dragActions(for: item),
+                               register: { buttons[item] = $0 }, action: {
+                        drawerOpen = false
+                        controller.toggle(.calendar, on: displayID)
+                    }) { MeetingTrayLabel(event: event) }
+                    if let url = event.joinURL {
+                        TimelineView(.periodic(from: .now, by: 30)) { context in
+                            if event.isSoon(at: context.date) {
+                                Button("Join") { controller.join(url) }.buttonStyle(.borderedProminent).controlSize(.small)
+                            } else {
+                                Button("Join") { controller.join(url) }.buttonStyle(.bordered).controlSize(.small)
+                            }
+                        }
+                    }
+                }
+            } else if item == .inputLanguage {
                 KeyboardInputMenu(keyboard: keyboard, willOpen: { controller.dismissPopup() },
                                   dragActions: dragActions(for: item), register: { buttons[item] = $0 })
             } else {
@@ -168,6 +187,7 @@ struct TaskbarTrayView: View {
         case .cpu: return .cpu
         case .clock: return .calendar
         case .settings: return .settings
+        case .meetings: return .calendar
         case .inputLanguage, .trash: preconditionFailure("This control does not use a popup")
         }
     }
@@ -175,6 +195,7 @@ struct TaskbarTrayView: View {
     private func width(for item: TrayItem) -> CGFloat {
         switch item {
         case .aiLimits: return 56
+        case .meetings: return calendarEvents.trayWidth
         case .inputLanguage: return 38
         case .battery: return 32
         case .cpu: return 58
@@ -223,7 +244,7 @@ struct TaskbarTrayView: View {
             }
         case .trash: Image(systemName: "trash").font(.system(size: 15))
         case .settings: Image(systemName: "gearshape").font(.system(size: 15))
-        case .inputLanguage: EmptyView()
+        case .inputLanguage, .meetings: EmptyView()
         }
     }
 }
@@ -260,5 +281,23 @@ private struct CPUMeter: View {
         .clipShape(RoundedRectangle(cornerRadius: 3))
         .overlay(RoundedRectangle(cornerRadius: 3).strokeBorder(.primary.opacity(0.25), lineWidth: 1))
         .animation(.easeInOut(duration: 0.8), value: fraction)
+    }
+}
+
+private struct MeetingTrayLabel: View {
+    let event: MeetingEvent
+
+    var body: some View {
+        HStack(spacing: 6) {
+            Image(systemName: event.joinURL == nil ? "calendar" : "video.fill").font(.system(size: 12)).foregroundStyle(.secondary)
+            VStack(alignment: .leading, spacing: 1) {
+                Text(event.title).font(.system(size: 11, weight: .medium)).lineLimit(1)
+                TimelineView(.periodic(from: .now, by: 30)) { context in
+                    Text(event.countdown(at: context.date)).font(.system(size: 10))
+                        .foregroundStyle(event.isOngoing(at: context.date) ? Color.accentColor : .secondary)
+                }
+            }
+            Spacer(minLength: 0)
+        }.padding(.horizontal, 6)
     }
 }
