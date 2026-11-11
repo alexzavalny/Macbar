@@ -44,7 +44,7 @@ final class CalendarEventsStore: ObservableObject {
 
     @Published private(set) var events: [MeetingEvent] = []
     @Published private(set) var access: Access = .notDetermined
-    /// The tray widget's meeting: running now or starting within eight hours.
+    /// The tray widget's meeting: running now or starting within an hour.
     @Published private(set) var next: MeetingEvent?
     private var timer: Timer?
     private let store = EKEventStore()
@@ -98,7 +98,7 @@ final class CalendarEventsStore: ObservableObject {
                              start: event.startDate, end: event.endDate,
                              joinURL: MeetingLink.find(in: [event.url?.absoluteString, event.location, event.notes]))
             }
-        next = events.first { $0.end > now && $0.start.timeIntervalSince(now) <= 8 * 3600 }
+        next = events.first { $0.end > now && $0.start.timeIntervalSince(now) <= 3600 }
     }
 
     func requestAccess() async {
