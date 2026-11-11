@@ -39,6 +39,7 @@ final class FlyoutPanel: NSPanel {
 @MainActor
 final class TaskbarController: NSObject, ObservableObject {
     let preferences = Preferences()
+    private let chord = ChordService()
     private let dockVisibility = DockVisibilityController()
     let applications: ApplicationStore
     let windowManagement: WindowManagementStore
@@ -88,6 +89,8 @@ final class TaskbarController: NSObject, ObservableObject {
     }
 
     func start() {
+        Screens.bottomInset = { [weak self] in self.map { $0.isVisible ? $0.preferences.barHeight : 0 } ?? 0 }
+        chord.start()
         dockVisibility.recover()
         dockVisibility.setHidden(preferences.hideDockWhileRunning)
         preferences.$hideDockWhileRunning.dropFirst().sink { [weak self] hidden in
@@ -147,7 +150,10 @@ final class TaskbarController: NSObject, ObservableObject {
         windowManagement.start()
     }
 
-    func restoreDock() { dockVisibility.setHidden(false) }
+    func restoreDock() {
+        chord.stop()
+        dockVisibility.setHidden(false)
+    }
 
     private func reconcileDisplays() {
         let next = NSScreen.screens.map(TaskbarDisplay.init)
@@ -564,6 +570,11 @@ final class TaskbarController: NSObject, ObservableObject {
         }
     }
 
+    func validateMenuItem(_ item: NSMenuItem) -> Bool {
+        if item.action == #selector(toggleChord) { item.state = chord.settings.enabled ? .on : .off }
+        return true
+    }
+
     private func createStatusItem() {
         let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
         item.button?.image = NSImage(systemSymbolName: "dock.rectangle", accessibilityDescription: "Macbar")
@@ -575,6 +586,16 @@ final class TaskbarController: NSObject, ObservableObject {
         settings.target = self
         let visibility = menu.addItem(withTitle: "Show / Hide Taskbar", action: #selector(toggleVisibility), keyEquivalent: "")
         visibility.target = self
+        menu.addItem(.separator())
+        let chordOn = menu.addItem(withTitle: "Chord Window Tiling", action: #selector(toggleChord), keyEquivalent: "")
+        chordOn.target = self
+        let chordSettings = menu.addItem(withTitle: "Chord Settings…", action: #selector(showChordSettings), keyEquivalent: "")
+        chordSettings.target = self
+        let chordAll = menu.addItem(withTitle: "Show All Windows", action: #selector(showAllWindows), keyEquivalent: "")
+        chordAll.target = self
+        menu.addItem(.separator())
+        let perms = menu.addItem(withTitle: "Permissions…", action: #selector(showPermissions), keyEquivalent: "")
+        perms.target = self
         let dock = menu.addItem(withTitle: "Desktop & Dock Settings…", action: #selector(showDockSettings), keyEquivalent: "")
         dock.target = self
         menu.addItem(.separator())
@@ -588,6 +609,10 @@ final class TaskbarController: NSObject, ObservableObject {
         if !manuallyVisible { toggleVisibility() }
         if isVisible { toggle(.settings) }
     }
+    @objc private func toggleChord() { chord.settings.setEnabled(!chord.settings.enabled) }
+    @objc private func showPermissions() { PermissionsWindow.shared.show() }
+    @objc private func showChordSettings() { chord.showSettings() }
+    @objc private func showAllWindows() { chord.showAllWindows() }
     @objc private func showDockSettings() { openSettings("com.apple.Desktop-Settings.extension") }
     @objc private func toggleVisibility() {
         manuallyVisible.toggle()
