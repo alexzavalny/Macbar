@@ -64,6 +64,7 @@
 		9D4158AF2ECCE30AA6A0317C /* TaskbarController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6A135A935C9DFD1D66DC6BD0 /* TaskbarController.swift */; };
 		A29B25B18CC84F95335F8DB3 /* TrayItem.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2D2F3FA66709E314B15CC4F9 /* TrayItem.swift */; };
 		A38D400A09ED234A04DE31E0 /* TaskbarView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5E40CBDC008F6D45431EAE68 /* TaskbarView.swift */; };
+		A3C3D691DC2CCE53AF55E188 /* CalendarEventsStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 35040A44D4B584E6587F33E3 /* CalendarEventsStore.swift */; };
 		A3C89B85580AE0E681C0F686 /* ComboSession.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7B762EA2A8615ED92257E4B2 /* ComboSession.swift */; };
 		A5B4930014334BCE78DF0F61 /* Splits.swift in Sources */ = {isa = PBXBuildFile; fileRef = 65B28EB9F9447D177085F29E /* Splits.swift */; };
 		A977209B526FD8548F21868B /* WindowFitGeometry.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9BF551791B138FBBFFD50A48 /* WindowFitGeometry.swift */; };
@@ -152,6 +153,7 @@
 		2C98691BB2DD3700069D0E64 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
 		2D2F3FA66709E314B15CC4F9 /* TrayItem.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TrayItem.swift; sourceTree = "<group>"; };
 		3488207633AF0FC4D32CB5B2 /* Parking.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Parking.swift; sourceTree = "<group>"; };
+		35040A44D4B584E6587F33E3 /* CalendarEventsStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CalendarEventsStore.swift; sourceTree = "<group>"; };
 		3601DECE0113E12385ED6278 /* Modifiers.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Modifiers.swift; sourceTree = "<group>"; };
 		365762E7414E2931B31BFEF0 /* WindowHider.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WindowHider.swift; sourceTree = "<group>"; };
 		36C8B79CE489530CA8C0F1E6 /* GridLayout.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GridLayout.swift; sourceTree = "<group>"; };
@@ -261,6 +263,7 @@
 				F47F8E639335858D50675AEF /* ApplicationStore.swift */,
 				A34E5C60322AAEAFC5F85AED /* AudioStore.swift */,
 				963516FFA4536C61232E2E2E /* BatteryStore.swift */,
+				35040A44D4B584E6587F33E3 /* CalendarEventsStore.swift */,
 				907469917AF98D6286164C79 /* CPUStore.swift */,
 				58545F0AC210B622EE478EF4 /* DockVisibilityController.swift */,
 				82EA628CC982C5C0F9F64C03 /* FullScreenDetection.swift */,
@@ -570,6 +573,7 @@
 				6B7363B89F7D8473B4A557D5 /* BatteryStore.swift in Sources */,
 				905D00A102C22A2B900740A4 /* CPUFlyout.swift in Sources */,
 				6A8D172EE84F4114821D32C1 /* CPUStore.swift in Sources */,
+				A3C3D691DC2CCE53AF55E188 /* CalendarEventsStore.swift in Sources */,
 				F2FBF20C389F980E847D65E3 /* CalendarFlyout.swift in Sources */,
 				C2EE41B171B36590EE3DBA4C /* ChordCoordinator.swift in Sources */,
 				1BC54704B13DE5B6666E129E /* ChordService.swift in Sources */,

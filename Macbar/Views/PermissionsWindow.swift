@@ -3,6 +3,7 @@ import AppKit
 import CoreLocation
 import CoreGraphics
 import ApplicationServices
+import EventKit
 
 enum PermissionState { case granted, denied, unknown }
 
@@ -22,6 +23,7 @@ struct PermissionItem: Identifiable {
 final class PermissionsStore: ObservableObject {
     @Published private(set) var items: [PermissionItem] = []
     private let location = CLLocationManager()
+    private let events = EKEventStore()
     private var timer: Timer?
 
     private static func pane(_ name: String) {
@@ -49,6 +51,8 @@ final class PermissionsStore: ObservableObject {
     func refresh() {
         let loc = location.authorizationStatus
         let locState: PermissionState = loc == .authorizedAlways ? .granted : (loc == .notDetermined ? .unknown : .denied)
+        let cal = EKEventStore.authorizationStatus(for: .event)
+        let calState: PermissionState = cal == .fullAccess ? .granted : (cal == .notDetermined ? .unknown : .denied)
         let music = Self.automation("com.apple.Music")
         items = [
             PermissionItem(id: "ax", icon: "hand.point.up.left", title: "Accessibility",
@@ -68,6 +72,13 @@ final class PermissionsStore: ObservableObject {
                            state: locState, note: locState == .unknown ? "Not asked yet" : nil) { [location] in
                 if location.authorizationStatus == .notDetermined { location.requestWhenInUseAuthorization() }
                 else { Self.pane("Privacy_LocationServices") }
+            },
+            PermissionItem(id: "calendar", icon: "calendar", title: "Calendar",
+                           purpose: "Upcoming meetings and Join buttons in the clock flyout.",
+                           state: calState, note: calState == .unknown ? "Not asked yet" : nil) { [events] in
+                if EKEventStore.authorizationStatus(for: .event) == .notDetermined {
+                    Task { _ = try? await events.requestFullAccessToEvents() }
+                } else { Self.pane("Privacy_Calendars") }
             },
             PermissionItem(id: "finder", icon: "trash", title: "Automation: Finder",
                            purpose: "Open and empty the Trash.",

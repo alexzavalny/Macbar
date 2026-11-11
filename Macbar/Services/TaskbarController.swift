@@ -45,6 +45,7 @@ final class TaskbarController: NSObject, ObservableObject {
     let windowManagement: WindowManagementStore
     let audio = AudioStore()
     let battery = BatteryStore()
+    let calendarEvents = CalendarEventsStore()
     let cpu = CPUStore()
     let wifi = WiFiStore()
     let keyboard = KeyboardInputStore()
@@ -229,7 +230,10 @@ final class TaskbarController: NSObject, ObservableObject {
             applications.reloadCatalog()
             panel.contentView = NSHostingView(rootView: LauncherView(applications: applications, preferences: preferences, controller: self))
         case .calendar:
-            panel.contentView = NSHostingView(rootView: CalendarFlyout())
+            panel.contentView = NSHostingView(rootView: CalendarFlyout(events: calendarEvents) { [weak self] url in
+                NSWorkspace.shared.open(url)
+                self?.dismissPopup()
+            })
         case .settings:
             panel.contentView = NSHostingView(rootView: SettingsFlyout(preferences: preferences, windowManagement: windowManagement))
         case .wifi:
@@ -564,7 +568,7 @@ final class TaskbarController: NSObject, ObservableObject {
             switch popup {
             case .start: size = CGSize(width: 600, height: startHeight)
             case .launcher: size = CGSize(width: 640, height: 600)
-            case .calendar: size = CGSize(width: 360, height: 442)
+            case .calendar: size = CGSize(width: 360, height: 620)
             case .settings: size = CGSize(width: 370, height: 640)
             case .wifi: size = CGSize(width: 370, height: 460)
             case .volume: size = CGSize(width: 360, height: 250)

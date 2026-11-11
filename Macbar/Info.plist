@@ -24,6 +24,12 @@
 	<string>1</string>
 	<key>LSUIElement</key>
 	<true/>
+	<key>NSAppleEventsUsageDescription</key>
+	<string>Macbar needs permission to control Music playback and open or empty Trash in Finder.</string>
+	<key>NSCalendarsFullAccessUsageDescription</key>
+	<string>Macbar shows your upcoming meetings in the clock flyout and offers a Join button for video calls. Events are read on this Mac and never stored or shared.</string>
+	<key>NSCalendarsUsageDescription</key>
+	<string>Macbar shows your upcoming meetings in the clock flyout and offers a Join button for video calls. Events are read on this Mac and never stored or shared.</string>
 	<key>NSHighResolutionCapable</key>
 	<true/>
 	<key>NSHumanReadableCopyright</key>
@@ -32,8 +38,6 @@
 	<string>Macbar needs Location permission to display nearby Wi-Fi network names. Your location is not recorded or shared.</string>
 	<key>NSLocationWhenInUseUsageDescription</key>
 	<string>Macbar needs Location permission to display nearby Wi-Fi network names. Your location is not recorded or shared.</string>
-	<key>NSAppleEventsUsageDescription</key>
-	<string>Macbar needs permission to control Music playback and open or empty Trash in Finder.</string>
 	<key>NSPrincipalClass</key>
 	<string>NSApplication</string>
 </dict>

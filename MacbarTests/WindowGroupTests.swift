@@ -155,3 +155,23 @@ final class WindowGroupTests: XCTestCase {
         XCTAssertTrue(store.groups.isEmpty, "one window is no group")
     }
 }
+
+final class MeetingLinkTests: XCTestCase {
+    func testFindsKnownCallLinkAndIgnoresOthers() {
+        XCTAssertEqual(MeetingLink.find(in: [nil, "Room 4", "Agenda https://example.com/doc\nJoin: https://acme.zoom.us/j/123?pwd=x"])?.host, "acme.zoom.us")
+        XCTAssertEqual(MeetingLink.find(in: ["https://meet.google.com/abc-defg-hij"])?.host, "meet.google.com")
+        XCTAssertNil(MeetingLink.find(in: ["https://notzoom.us.evil.com/j/1", "https://example.com"]))
+        XCTAssertNil(MeetingLink.find(in: [nil, nil]))
+    }
+
+    func testSoonMeansRunningOrWithinTenMinutes() {
+        let now = Date()
+        func event(_ start: TimeInterval, _ end: TimeInterval) -> MeetingEvent {
+            MeetingEvent(id: "e", title: "t", start: now.addingTimeInterval(start), end: now.addingTimeInterval(end), joinURL: nil)
+        }
+        XCTAssertTrue(event(-300, 900).isSoon(at: now))
+        XCTAssertTrue(event(540, 2000).isSoon(at: now))
+        XCTAssertFalse(event(900, 2000).isSoon(at: now))
+        XCTAssertFalse(event(-900, -10).isSoon(at: now))
+    }
+}
