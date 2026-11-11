@@ -185,4 +185,12 @@ final class MeetingLinkTests: XCTestCase {
         XCTAssertEqual(event(5).countdown(at: now), "in 1 min")
         XCTAssertTrue(event(2 * 3600, 3 * 3600).countdown(at: now).hasPrefix("at "))
     }
+
+    func testStoreIsRenewedWhenAccessIsGrantedLater() {
+        XCTAssertTrue(CalendarEventsStore.needsFreshStore(from: .notDetermined, to: .granted))
+        XCTAssertTrue(CalendarEventsStore.needsFreshStore(from: .denied, to: .granted))
+        XCTAssertFalse(CalendarEventsStore.needsFreshStore(from: .granted, to: .granted))
+        XCTAssertFalse(CalendarEventsStore.needsFreshStore(from: .granted, to: .denied))
+        XCTAssertFalse(CalendarEventsStore.needsFreshStore(from: .notDetermined, to: .denied))
+    }
 }

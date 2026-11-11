@@ -79,13 +79,16 @@ final class CalendarEventsStore: ObservableObject {
         }
     }
 
+    /// A store opened before access was granted stays blind, so every move into "granted" needs a new one.
+    nonisolated static func needsFreshStore(from before: Access, to after: Access) -> Bool { after == .granted && before != .granted }
+
     /// Meetings that haven't ended, through the end of tomorrow.
     func load() {
         let before = access
         refreshAccess()
         // A store opened before access was granted (here or in the Permissions window) never
         // sees any events, so start a fresh one.
-        if access == .granted, before != .granted { store = EKEventStore() }
+        if Self.needsFreshStore(from: before, to: access) { store = EKEventStore() }
         guard access == .granted else { events = []; next = nil; return }
         let calendar = Calendar.current
         let now = Date()
