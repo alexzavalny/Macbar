@@ -174,4 +174,15 @@ final class MeetingLinkTests: XCTestCase {
         XCTAssertFalse(event(900, 2000).isSoon(at: now))
         XCTAssertFalse(event(-900, -10).isSoon(at: now))
     }
+
+    func testCountdownReadsNowMinutesOrClockTime() {
+        let now = Date()
+        func event(_ start: TimeInterval, _ end: TimeInterval = 3600) -> MeetingEvent {
+            MeetingEvent(id: "e", title: "t", start: now.addingTimeInterval(start), end: now.addingTimeInterval(end), joinURL: nil)
+        }
+        XCTAssertEqual(event(-60).countdown(at: now), "Now")
+        XCTAssertEqual(event(12 * 60 - 20).countdown(at: now), "in 12 min")
+        XCTAssertEqual(event(5).countdown(at: now), "in 1 min")
+        XCTAssertTrue(event(2 * 3600, 3 * 3600).countdown(at: now).hasPrefix("at "))
+    }
 }

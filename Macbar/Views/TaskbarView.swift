@@ -10,6 +10,7 @@ struct TaskbarView: View {
     @ObservedObject var wifi: WiFiStore
     @ObservedObject var keyboard: KeyboardInputStore
     @ObservedObject var aiLimits: AILimitsStore
+    @ObservedObject var calendarEvents: CalendarEventsStore
     @ObservedObject var windowTiles: TaskbarWindowStore
     @ObservedObject var windowGroups: WindowGroupStore
     @ObservedObject var music: AppleMusicStore
@@ -24,7 +25,7 @@ struct TaskbarView: View {
 
     var body: some View {
         GeometryReader { geometry in
-            let sideWidth = preferences.trayWidth(hasBattery: battery.state != nil) + 15
+            let sideWidth = preferences.trayWidth(hasBattery: battery.state != nil, meetingWidth: calendarEvents.trayWidth) + 15
             let apps = preferences.orderedTaskbarApps(applications.pinnedApps + applications.unpinnedRunningApps)
             let scope = TaskbarBarScope(display: controller.displays.first { $0.id == displayID }?.windowFrame,
                 allDisplays: controller.displays.map(\.windowFrame), readsWindows: controller.readsWindows, placement: windowTiles.placement)
@@ -303,7 +304,7 @@ struct TaskbarView: View {
 
     private var tray: some View {
         TaskbarTrayView(controller: controller, preferences: preferences, audio: audio, battery: battery, cpu: cpu,
-                        wifi: wifi, keyboard: keyboard, aiLimits: aiLimits, displayID: displayID)
+                        wifi: wifi, keyboard: keyboard, aiLimits: aiLimits, calendarEvents: calendarEvents, displayID: displayID)
     }
 }
 

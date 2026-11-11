@@ -100,6 +100,7 @@ final class TaskbarController: NSObject, ObservableObject {
                 }
             })
         }
+        calendarEvents.start()
         chord.start()
         dockVisibility.recover()
         dockVisibility.setHidden(preferences.hideDockWhileRunning)
@@ -184,7 +185,7 @@ final class TaskbarController: NSObject, ObservableObject {
             panel.appearance = preferences.appearance.nsAppearance
             panel.contentView = TaskbarHostingView(rootView: TaskbarView(controller: self, applications: applications,
                 preferences: preferences, audio: audio, battery: battery, cpu: cpu, wifi: wifi, keyboard: keyboard,
-                aiLimits: aiLimits, windowTiles: windowTiles, windowGroups: windowGroups, music: music, zoom: zoom, displayID: display.id))
+                aiLimits: aiLimits, calendarEvents: calendarEvents, windowTiles: windowTiles, windowGroups: windowGroups, music: music, zoom: zoom, displayID: display.id))
             bars[display.id] = panel
         }
         positionWindows()
@@ -231,8 +232,7 @@ final class TaskbarController: NSObject, ObservableObject {
             panel.contentView = NSHostingView(rootView: LauncherView(applications: applications, preferences: preferences, controller: self))
         case .calendar:
             panel.contentView = NSHostingView(rootView: CalendarFlyout(events: calendarEvents) { [weak self] url in
-                NSWorkspace.shared.open(url)
-                self?.dismissPopup()
+                self?.join(url)
             })
         case .settings:
             panel.contentView = NSHostingView(rootView: SettingsFlyout(preferences: preferences, windowManagement: windowManagement))
@@ -623,6 +623,11 @@ final class TaskbarController: NSObject, ObservableObject {
         if isVisible { toggle(.settings) }
     }
     @objc private func toggleChord() { chord.settings.setEnabled(!chord.settings.enabled) }
+    func join(_ url: URL) {
+        dismissPopup()
+        NSWorkspace.shared.open(url)
+    }
+
     @objc private func showPermissions() { PermissionsWindow.shared.show() }
     @objc private func showChordSettings() { chord.showSettings() }
     @objc private func showAllWindows() { chord.showAllWindows() }

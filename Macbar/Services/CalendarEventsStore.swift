@@ -11,6 +11,13 @@ struct MeetingEvent: Identifiable, Equatable {
     func isOngoing(at now: Date) -> Bool { start <= now && now < end }
     /// Worth a prominent Join button: running, or starting within ten minutes.
     func isSoon(at now: Date) -> Bool { end > now && start.timeIntervalSince(now) <= 600 }
+
+    /// "Now", "in 12 min", or "at 14:00" when it is an hour or more away.
+    func countdown(at now: Date) -> String {
+        if isOngoing(at: now) { return "Now" }
+        let minutes = Int((start.timeIntervalSince(now) / 60).rounded(.up))
+        return minutes < 60 ? "in \(max(minutes, 1)) min" : "at \(start.formatted(date: .omitted, time: .shortened))"
+    }
 }
 
 enum MeetingLink {
@@ -37,6 +44,9 @@ final class CalendarEventsStore: ObservableObject {
 
     @Published private(set) var events: [MeetingEvent] = []
     @Published private(set) var access: Access = .notDetermined
+    /// The tray widget's meeting: running now or starting within eight hours.
+    @Published private(set) var next: MeetingEvent?
+    private var timer: Timer?
     private let store = EKEventStore()
     private var observer: NSObjectProtocol?
 
@@ -46,6 +56,18 @@ final class CalendarEventsStore: ObservableObject {
         }
         refreshAccess()
     }
+
+    /// Keeps `next` current for the tray widget, without the flyout being open.
+    func start() {
+        load()
+        guard timer == nil else { return }
+        timer = Timer.scheduledTimer(withTimeInterval: 60, repeats: true) { [weak self] _ in
+            MainActor.assumeIsolated { self?.load() }
+        }
+    }
+
+    /// Width the tray widget needs: its label, plus room for Join when the meeting has a call link.
+    var trayWidth: CGFloat { next.map { $0.joinURL == nil ? 128 : 172 } ?? 0 }
 
     deinit { observer.map(NotificationCenter.default.removeObserver) }
 
@@ -60,7 +82,7 @@ final class CalendarEventsStore: ObservableObject {
     /// Meetings that haven't ended, through the end of tomorrow.
     func load() {
         refreshAccess()
-        guard access == .granted else { events = []; return }
+        guard access == .granted else { events = []; next = nil; return }
         let calendar = Calendar.current
         let now = Date()
         guard let end = calendar.date(byAdding: .day, value: 2, to: calendar.startOfDay(for: now)) else { return }
@@ -76,6 +98,7 @@ final class CalendarEventsStore: ObservableObject {
                              start: event.startDate, end: event.endDate,
                              joinURL: MeetingLink.find(in: [event.url?.absoluteString, event.location, event.notes]))
             }
+        next = events.first { $0.end > now && $0.start.timeIntervalSince(now) <= 8 * 3600 }
     }
 
     func requestAccess() async {
