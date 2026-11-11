@@ -131,4 +131,27 @@ final class WindowGroupTests: XCTestCase {
         XCTAssertFalse(group.contains(tile(other)))
         XCTAssertTrue(group.contains(TaskbarTile(app: app, window: nil)))
     }
+
+    @MainActor func testChordTileOfThreeShowsAsOneExternalGroup() {
+        func tile(_ id: String) -> TaskbarTile {
+            TaskbarTile(app: ApplicationItem(id: id, name: id, url: URL(fileURLWithPath: "/tmp/\(id).app"), icon: NSImage()), window: nil)
+        }
+        let a = tile("a"), b = tile("b"), c = tile("c"), other = tile("other")
+        let members = [a, b, c].enumerated().map {
+            WindowGroupMember(tile: $1, processID: pid_t($0 + 1), element: AXUIElementCreateApplication(pid_t(100010 + $0)))
+        }
+        let group = WindowGroup(members: members, isExternal: true)
+        let items = TaskbarStripItem.make(tiles: [a, other, b, c], groups: [group])
+        XCTAssertEqual(items.map(\.tiles.count), [3, 1])
+        XCTAssertEqual(items[0].groupID, group.id)
+
+        let store = WindowGroupStore()
+        store.setExternal(members)
+        XCTAssertEqual(store.groups.count, 1)
+        let id = store.groups[0].id
+        store.setExternal(members)
+        XCTAssertEqual(store.groups[0].id, id, "an updated tile keeps its group, so the strip doesn't flicker")
+        store.setExternal([members[0]])
+        XCTAssertTrue(store.groups.isEmpty, "one window is no group")
+    }
 }

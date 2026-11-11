@@ -90,6 +90,15 @@ final class TaskbarController: NSObject, ObservableObject {
 
     func start() {
         Screens.bottomInset = { [weak self] in self.map { $0.isVisible ? $0.preferences.barHeight : 0 } ?? 0 }
+        windowGroups.onReleaseExternal = { [weak chord] in chord?.dropTile() }
+        chord.onTileWindows = { [weak self] windows in
+            guard let self else { return }
+            self.windowGroups.setExternal(windows.compactMap { w in
+                self.applications.application(for: w.bundleID).map {
+                    WindowGroupMember(tile: TaskbarTile(app: $0, window: nil), processID: w.pid, element: w.window)
+                }
+            })
+        }
         chord.start()
         dockVisibility.recover()
         dockVisibility.setHidden(preferences.hideDockWhileRunning)

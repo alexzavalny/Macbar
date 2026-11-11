@@ -12,7 +12,11 @@ final class ChordService {
     private lazy var tapWatch = TapWatch { [unowned self] in self.settings.modifiers }
     private var trustSubscription: AnyCancellable?
 
+    /// The tile's placed windows, for the taskbar to show as one group.
+    var onTileWindows: @MainActor ([(bundleID: String, pid: pid_t, window: AXUIElement)]) -> Void = { _ in }
+
     func start() {
+        coordinator.onTileWindows = { [weak self] in self?.onTileWindows($0) }
         // Per-element timeouts only cover the element they are set on; this sets the default
         // for every element, including window elements copied from apps.
         AXUIElementSetMessagingTimeout(AXUIElementCreateSystemWide(), AX.messagingTimeout)
@@ -39,6 +43,7 @@ final class ChordService {
         if AXIsProcessTrusted() { coordinator.showAll() }
     }
 
+    func dropTile() { coordinator.dropTile() }
     func stop() { coordinator.restoreAll() }
     func showAllWindows() { coordinator.showAll() }
     func showSettings() { settingsWindow.show(settings: settings, access: access) }
