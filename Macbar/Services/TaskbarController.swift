@@ -568,7 +568,7 @@ final class TaskbarController: NSObject, ObservableObject {
             switch popup {
             case .start: size = CGSize(width: 600, height: startHeight)
             case .launcher: size = CGSize(width: 640, height: 600)
-            case .calendar: size = CGSize(width: 360, height: 620)
+            case .calendar: size = CGSize(width: 360, height: 660)
             case .settings: size = CGSize(width: 370, height: 640)
             case .wifi: size = CGSize(width: 370, height: 460)
             case .volume: size = CGSize(width: 360, height: 250)

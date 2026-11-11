@@ -25,7 +25,7 @@ struct CalendarFlyout: View {
 
     var body: some View {
         FlyoutSurface {
-            VStack(alignment: .leading, spacing: 18) {
+            VStack(alignment: .leading, spacing: 14) {
                 TimelineView(.periodic(from: .now, by: 1)) { context in
                     VStack(alignment: .leading, spacing: 4) {
                         Text(context.date, format: .dateTime.weekday(.wide).month(.wide).day()).font(.system(size: 12)).foregroundStyle(.secondary)
