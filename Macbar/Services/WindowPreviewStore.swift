@@ -91,7 +91,7 @@ final class ScreenCapturePreviewProvider: WindowPreviewProviding {
             $0.owningApplication?.bundleIdentifier == bundleID && $0.windowLayer == 0 &&
             $0.frame.width > 1 && $0.frame.height > 1
         }.sorted { $0.windowID < $1.windowID }
-        sources = Dictionary(uniqueKeysWithValues: windows.map { ($0.windowID, $0) })
+        sources = Dictionary(windows.map { ($0.windowID, $0) }, uniquingKeysWith: { first, _ in first })
         return windows.map {
             WindowPreview(id: $0.windowID, processID: $0.owningApplication!.processID,
                           title: $0.title?.isEmpty == false ? $0.title! : "Untitled window", frame: $0.frame)

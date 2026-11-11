@@ -116,6 +116,8 @@ final class AccessibilityTaskbarWindowProvider: TaskbarWindowProviding, @uncheck
                         let minimized = readAttribute(element, kAXMinimizedAttribute) as? Bool
                         // Finder reports AXDialog for a minimized normal window.
                         guard subrole == nil || subrole == kAXStandardWindowSubrole as String || minimized == true else { continue }
+                        // An app can list one window twice; a duplicate would share its ID.
+                        guard !(next[process.id] ?? []).contains(where: { CFEqual($0.element, element) }) else { continue }
                         let id = known[process.id]?.first { CFEqual($0.element, element) }?.id ?? UUID()
                         let previous = snapshots[process.id]?.first { $0.id == id }
                         next[process.id, default: []].append((element, id))
@@ -131,7 +133,7 @@ final class AccessibilityTaskbarWindowProvider: TaskbarWindowProviding, @uncheck
                     }
                 }
                 // AX window arrays often reorder on focus changes. Keep tile positions stable.
-                let order = Dictionary(uniqueKeysWithValues: processes.flatMap { known[$0.id] ?? [] }.enumerated().map { ($0.element.id, $0.offset) })
+                let order = Dictionary(processes.flatMap { known[$0.id] ?? [] }.enumerated().map { ($0.element.id, $0.offset) }, uniquingKeysWith: { first, _ in first })
                 result.sort { (order[$0.id] ?? Int.max) < (order[$1.id] ?? Int.max) }
                 for process in processes {
                     next[process.id]?.sort { (order[$0.id] ?? Int.max) < (order[$1.id] ?? Int.max) }
